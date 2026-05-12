@@ -1,0 +1,41 @@
+{
+  "name": "agents-cours",
+  "version": "1.0.0",
+  "description": "Système de gestion de cours par agents IA pour Le Pôle S",
+  "type": "module",
+  "author": "Facundo",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "ia",
+    "cours",
+    "pedagogie",
+    "deepseek",
+    "mcp"
+  ],
+  "scripts": {
+    "test-config": "node scripts/test-config.js",
+    "migrate": "node scripts/migrate.js",
+    "cli": "node src/interfaces/cli/cli.js",
+    "http": "node src/interfaces/http/httpServer.js",
+    "mcp:createur": "node src/interfaces/mcp/createurServer.js",
+    "mcp:reviseur": "node src/interfaces/mcp/reviseurServer.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "helmet": "^7.1.0",
+    "inquirer": "^9.2.23",
+    "openai": "^4.58.0",
+    "ora": "^8.0.1"
+  },
+  "devDependencies": {
+    "vitest": "^2.0.5"
+  }
+}
