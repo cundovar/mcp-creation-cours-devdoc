@@ -82,21 +82,23 @@ export class CLI {
               description: options.description
             };
 
-      const spinner = ora("Génération du cours en cours").start();
-      const creerCoursUseCase = this.container.getCreerCoursUseCase();
-      const result = await creerCoursUseCase.executer(demande);
-      spinner.succeed(chalk.green("Cours généré avec succès"));
+      const spinner = ora("Génération du candidat en cours").start();
+      const orchestration = this.container.getCourseOrchestrationService();
+      const candidate = await orchestration.genererCandidat({
+        title: demande.titre,
+        description: demande.description,
+        technology: demande.technologie,
+        level: demande.niveau,
+        duration: demande.duree
+      });
+      spinner.succeed(chalk.green("Candidat généré : vérification requise avant création"));
 
-      console.log(chalk.cyan("\nDétails du cours:"));
-      console.log(`- Titre: ${result.cours.title}`);
-      console.log(`- Technologie: ${result.cours.technology?.name}`);
-      console.log(`- Niveau: ${result.cours.level?.name}`);
-      console.log(`- Durée: ${result.cours.duration}`);
-      console.log(`- Statut: ${result.cours.statut}`);
-      console.log(`- ID: ${result.id}`);
-      if (result.cours.objectifs) {
+      console.log(chalk.cyan("\nDétails du candidat:"));
+      console.log(`- Titre: ${candidate.title}`);
+      console.log(`- Durée: ${candidate.duration}`);
+      if (candidate.objectives) {
         console.log(chalk.cyan("\nObjectifs:"));
-        console.log(result.cours.objectifs);
+        console.log(candidate.objectives);
       }
     } catch (error) {
       console.error(chalk.red(`Erreur: ${error.message}`));
