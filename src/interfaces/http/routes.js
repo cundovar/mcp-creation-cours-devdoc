@@ -1,12 +1,56 @@
 export function setupRoutes(app, container) {
-  const creerCoursUseCase = container.getCreerCoursUseCase();
   const reviserCoursUseCase = container.getReviserCoursUseCase();
   const listerCoursUseCase = container.getListerCoursUseCase();
   const coursRepository = container.getCoursRepository();
+  const orchestration = container.getCourseOrchestrationService();
+
+  app.post("/api/orchestration/formations/preparer", async (req, res, next) => {
+    try { return res.json({ success: true, data: await orchestration.preparerFormation(req.body || {}) }); } catch (error) { return next(error); }
+  });
+
+  app.post("/api/orchestration/candidats", async (req, res, next) => {
+    try { return res.json({ success: true, data: await orchestration.genererCandidat(req.body || {}) }); } catch (error) { return next(error); }
+  });
+
+  app.post("/api/orchestration/illustrations", async (req, res, next) => {
+    try { return res.json({ success: true, data: await orchestration.genererIllustrations(req.body || {}) }); } catch (error) { return next(error); }
+  });
+
+  app.post("/api/orchestration/illustrations/associer", async (req, res, next) => {
+    try { return res.json({ success: true, data: orchestration.associerIllustrations(req.body || {}) }); } catch (error) { return next(error); }
+  });
+
+  app.post("/api/orchestration/verifier", async (req, res, next) => {
+    try { return res.json({ success: true, data: await orchestration.verifierCandidat(req.body || {}) }); } catch (error) { return next(error); }
+  });
+
+  app.post("/api/orchestration/corriger", async (req, res, next) => {
+    try { return res.json({ success: true, data: await orchestration.corrigerCandidat(req.body || {}) }); } catch (error) { return next(error); }
+  });
+
+  app.post("/api/orchestration/generations", async (req, res, next) => {
+    try { return res.status(201).json({ success: true, data: await coursRepository.creerGeneration(req.body || {}) }); } catch (error) { return next(error); }
+  });
+
+  app.put("/api/orchestration/generations/:id", async (req, res, next) => {
+    try { return res.json({ success: true, data: await coursRepository.mettreAJourGeneration(Number(req.params.id), req.body || {}) }); } catch (error) { return next(error); }
+  });
+
+  app.get("/api/orchestration/generations/:id", async (req, res, next) => {
+    try { return res.json({ success: true, data: await coursRepository.voirGeneration(Number(req.params.id)) }); } catch (error) { return next(error); }
+  });
+
+  app.post("/api/orchestration/generations/:id/finaliser", async (req, res, next) => {
+    try { return res.json({ success: true, data: await coursRepository.finaliserGeneration(Number(req.params.id)) }); } catch (error) { return next(error); }
+  });
+
+  app.post("/api/orchestration/generations/:id/echouer", async (req, res, next) => {
+    try { return res.json({ success: true, data: await coursRepository.echouerGeneration(Number(req.params.id), req.body || {}) }); } catch (error) { return next(error); }
+  });
 
   app.post("/api/cours/creer", async (req, res, next) => {
     try {
-      const { titre, description, technologie, niveau, duree, menuId, nouveauMenuLabel } = req.body || {};
+      const { titre, description, technologie, niveau, duree } = req.body || {};
       if (!titre || !technologie || !niveau || !duree) {
         return res.status(400).json({
           error: "Champs requis manquants",
@@ -14,28 +58,18 @@ export function setupRoutes(app, container) {
         });
       }
 
-      const result = await creerCoursUseCase.executer({
-        titre,
+      const candidate = await orchestration.genererCandidat({
+        title: titre,
         description,
-        technologie,
-        niveau,
-        duree,
-        menuId: menuId ? Number.parseInt(menuId, 10) : undefined,
-        nouveauMenuLabel
+        technology: technologie,
+        level: niveau,
+        duration: duree
       });
 
-      return res.status(201).json({
+      return res.status(202).json({
         success: true,
-        message: "Cours créé avec succès",
-        data: {
-          id: result.id,
-          titre: result.cours.title,
-          technologie: result.cours.technology?.name,
-          niveau: result.cours.level?.name,
-          duree: result.cours.duration,
-          statut: result.cours.statut,
-          genereParIA: result.cours.genereParIA
-        }
+        message: "Candidat généré. Il doit être vérifié puis finalisé avant toute création de cours.",
+        data: candidate
       });
     } catch (error) {
       return next(error);

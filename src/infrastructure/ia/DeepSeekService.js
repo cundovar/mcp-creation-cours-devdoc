@@ -97,6 +97,21 @@ Pas de contexte, juste les compétences.`;
     return this.extraireHTML(response.choices[0].message.content);
   }
 
+  async genererPlanIllustrations(specifications, contenuCours) {
+    const response = await this.client.chat.completions.create({
+      model: "deepseek-chat",
+      messages: [
+        { role: "system", content: "Propose au maximum trois illustrations pédagogiques. Réponds uniquement par JSON {illustrations:[{prompt,altText,caption}]}. Si aucune image n'est utile, utilise un tableau vide." },
+        { role: "user", content: `Cours : ${specifications.sujet}\nTechnologie : ${specifications.technologie}\n\nContenu :\n${(contenuCours || "").slice(0, 7000)}` }
+      ],
+      temperature: 0.3,
+      max_tokens: 1200,
+      response_format: { type: "json_object" }
+    });
+    const parsed = JSON.parse(response.choices[0].message.content || "{}");
+    return (Array.isArray(parsed.illustrations) ? parsed.illustrations : []).slice(0, 3).filter((item) => item?.prompt && item?.altText);
+  }
+
   construirePromptCreation(specs) {
     return `Crée un cours technique en HTML sur "${specs.sujet}" (${specs.technologie}).
 

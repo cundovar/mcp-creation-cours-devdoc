@@ -5,6 +5,10 @@ import { CreerCours } from "../../domain/use-cases/CreerCours.js";
 import { ReviserCours } from "../../domain/use-cases/ReviserCours.js";
 import { ListerCours } from "../../domain/use-cases/ListerCours.js";
 import { GererMenus } from "../../domain/use-cases/GererMenus.js";
+import { OrchestrerCours } from "../../domain/use-cases/OrchestrerCours.js";
+import { OpenAIImageService } from "../ia/OpenAIImageService.js";
+import { OpenAIVerificationService } from "../ia/OpenAIVerificationService.js";
+import { DeterministicCourseValidator } from "../../domain/services/DeterministicCourseValidator.js";
 
 const require = createRequire(import.meta.url);
 
@@ -71,6 +75,15 @@ export class Container {
 
   getGererMenusUseCase() {
     return new GererMenus(this.getCoursRepository());
+  }
+
+  getCourseOrchestrationService() {
+    if (!this.instances.courseOrchestration) {
+      const imageService = this.config.openai.apiKey ? new OpenAIImageService(this.config.openai.apiKey, this.config.openai.imageModel) : null;
+      const verifier = new OpenAIVerificationService(this.config.openai.apiKey, this.config.openai.verifierModel);
+      this.instances.courseOrchestration = new OrchestrerCours(this.getCoursRepository(), this.getIAService(), imageService, verifier, new DeterministicCourseValidator());
+    }
+    return this.instances.courseOrchestration;
   }
 
   async dispose() {

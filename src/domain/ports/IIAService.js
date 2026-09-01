@@ -14,4 +14,8 @@ export class IIAService {
   async genererExercices(_specifications, _contenuCours) {
     throw new Error("La méthode genererExercices doit être implémentée");
   }
+
+  async genererPlanIllustrations(_specifications, _contenuCours) {
+    throw new Error("La méthode genererPlanIllustrations doit être implémentée");
+  }
 }

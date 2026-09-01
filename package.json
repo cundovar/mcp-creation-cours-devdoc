@@ -21,7 +21,8 @@
     "cli": "node src/interfaces/cli/cli.js",
     "http": "node src/interfaces/http/httpServer.js",
     "mcp:createur": "node src/interfaces/mcp/createurServer.js",
-    "mcp:reviseur": "node src/interfaces/mcp/reviseurServer.js"
+    "mcp:reviseur": "node src/interfaces/mcp/reviseurServer.js",
+    "test": "vitest run"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

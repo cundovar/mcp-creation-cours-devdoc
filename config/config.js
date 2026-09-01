@@ -29,9 +29,15 @@ export const config = {
   deepseek: {
     apiKey: process.env.DEEPSEEK_API_KEY
   },
+  openai: {
+    apiKey: process.env.OPENAI_API_KEY,
+    imageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1",
+    verifierModel: process.env.OPENAI_VERIFIER_MODEL || "gpt-5-mini"
+  },
   http: {
     port: Number.parseInt(process.env.HTTP_PORT || "3000", 10),
-    corsOrigin: process.env.HTTP_CORS_ORIGIN || "*"
+    corsOrigin: process.env.HTTP_CORS_ORIGIN || "*",
+    orchestrationToken: process.env.ORCHESTRATION_API_TOKEN || ""
   },
   log: {
     level: process.env.LOG_LEVEL || "info"
