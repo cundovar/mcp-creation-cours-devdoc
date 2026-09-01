@@ -8,7 +8,7 @@ describe("OrchestrerCours", () => {
     const repository = {
       listerSuperMenus: async () => [], creerSuperMenu: async (name) => ({ id: 1, name }),
       listerCategories: async () => [], creerTechnologie: async (data) => ({ id: 2, ...data }),
-      listerNiveaux: async () => [], listerMenus: async () => [],
+      listerNiveaux: async () => [], listerPositionsMenus: async () => [], listerMenus: async () => [],
       creerMenu: async (data) => { created.push(data); return { id: 3, ...data }; }
     };
     const service = new OrchestrerCours(repository, {}, null, {}, new DeterministicCourseValidator());
@@ -18,8 +18,57 @@ describe("OrchestrerCours", () => {
     expect(created[0].categoryId).toBe(2);
   });
 
+  it("ne crée qu’un menu pour deux demandes identiques avec la même position", async () => {
+    const menus = [];
+    const repository = {
+      listerSuperMenus: async () => [{ id: 1, name: "AUTOMATISATION" }],
+      listerCategories: async () => [{ id: 2, name: "n8n", superMenu: { id: 1 } }],
+      listerNiveaux: async () => [{ id: 3, name: "Débutant" }],
+      listerPositionsMenus: async () => [],
+      creerPositionMenu: async (position) => ({ id: 4, position }),
+      listerMenus: async () => [],
+      creerMenu: async (data) => { const menu = { id: 5, ...data }; menus.push(menu); return menu; }
+    };
+    const service = new OrchestrerCours(repository, {}, null, {}, new DeterministicCourseValidator());
+    const result = await service.preparerFormation({ superMenu: "AUTOMATISATION", category: "n8n", menus: [
+      { name: "Cours", level: "Débutant", position: "Principal" },
+      { name: "Cours", level: "Débutant", position: "Principal" }
+    ] });
+    expect(menus).toHaveLength(1);
+    expect(result.menus[0].id).toBe(result.menus[1].id);
+  });
+
+  it("insère les illustrations même si le HTML contient un commentaire final", () => {
+    const service = new OrchestrerCours({}, {}, null, {}, new DeterministicCourseValidator());
+    const result = service.associerIllustrations({
+      candidate: { codeHTML: '<main class="principal"><p>Texte</p></main><!-- fin -->' },
+      images: [{ id: 1, url: "/uploads/course-media/schema.png", altText: "Schéma" }]
+    });
+    expect(result.codeHTML).toContain('src="/uploads/course-media/schema.png"');
+    expect(result.codeHTML).toContain("<!-- fin -->");
+  });
+
   it("bloque un candidat contenant un script", () => {
     const issues = new DeterministicCourseValidator().validate({ codeHTML: '<main class="principal"><script>alert(1)</script></main>' });
     expect(issues).toEqual(expect.arrayContaining([expect.objectContaining({ code: "UNSAFE_HTML", severity: "blocking" })]));
+  });
+
+  it.each([
+    ['<main class="principal"><a href="javascript:alert(1)">Lien</a></main>', "UNSAFE_URL"],
+    ['<main class="principal"><a href="&#x6a;avascript:alert(1)">Lien</a></main>', "UNSAFE_URL"],
+    ['<main class="principal"><iframe src="/interne"></iframe></main>', "FORBIDDEN_TAG"],
+    ['<main class="principal"><object data="/interne"></object></main>', "FORBIDDEN_TAG"],
+    ['<main class="principal"><embed src="/interne"></main>', "FORBIDDEN_TAG"],
+    ['<main class="principal"><a href="https://example.org/piege">Externe</a></main>', "EXTERNAL_URL"]
+  ])("bloque le HTML dangereux %#", (codeHTML, expectedCode) => {
+    const issues = new DeterministicCourseValidator().validate({ codeHTML });
+    expect(issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: expectedCode, severity: "blocking" })
+    ]));
+  });
+
+  it("autorise les ancres et les médias Symfony internes", () => {
+    const codeHTML = '<main class="principal"><a href="#pratique">Pratique</a><figure><img src="/uploads/course-media/cours.png" alt="Schéma du cours"></figure></main>';
+    expect(new DeterministicCourseValidator().validate({ codeHTML })).toEqual([]);
   });
 });
