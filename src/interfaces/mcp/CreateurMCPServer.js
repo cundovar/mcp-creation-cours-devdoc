@@ -11,6 +11,8 @@ export class CreateurMCPServer {
     this.creerCoursUseCase = container.getCreerCoursUseCase();
     this.listerCoursUseCase = container.getListerCoursUseCase();
     this.gererMenusUseCase = container.getGererMenusUseCase();
+    this.coursRepository = container.getCoursRepository();
+    this.orchestration = container.getCourseOrchestrationService();
 
     this.server = new Server(
       { name: "agent-createur-cours", version: "1.0.0" },
@@ -23,6 +25,56 @@ export class CreateurMCPServer {
   setupTools() {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
+        {
+          name: "preparer_formation",
+          description: "Crée ou réutilise un supermenu, une catégorie et ses menus.",
+          inputSchema: { type: "object", properties: { superMenu: { type: "string" }, category: { type: "string" }, menus: { type: "array", items: { type: "object" } } }, required: ["superMenu", "category"] }
+        },
+        {
+          name: "lister_arborescence",
+          description: "Liste les supermenus, catégories, menus et cours disponibles.",
+          inputSchema: { type: "object", properties: {} }
+        },
+        {
+          name: "generer_candidat_cours",
+          description: "Génère un candidat de cours sans écrire de cours dans Symfony.",
+          inputSchema: { type: "object", properties: { title: { type: "string" }, description: { type: "string" }, technology: { type: "string" }, level: { type: "string" }, duration: { type: "string" } }, required: ["title", "technology", "level", "duration"] }
+        },
+        {
+          name: "generer_illustrations",
+          description: "Génère et stocke les illustrations temporaires d’une génération.",
+          inputSchema: { type: "object", properties: { generationId: { type: "number" }, illustrations: { type: "array" } }, required: ["generationId", "illustrations"] }
+        },
+        {
+          name: "associer_illustrations",
+          description: "Insère des médias Symfony dans le HTML d’un candidat.",
+          inputSchema: { type: "object", properties: { candidate: { type: "object" }, images: { type: "array" } }, required: ["candidate"] }
+        },
+        {
+          name: "verifier_candidat",
+          description: "Vérifie un candidat avec un contexte IA indépendant.",
+          inputSchema: { type: "object", properties: { candidate: { type: "object" }, images: { type: "array" } }, required: ["candidate"] }
+        },
+        {
+          name: "corriger_candidat",
+          description: "Corrige uniquement les problèmes signalés par le vérificateur.",
+          inputSchema: { type: "object", properties: { candidate: { type: "object" }, report: { type: "object" }, technology: { type: "string" }, level: { type: "string" } }, required: ["candidate", "report", "technology", "level"] }
+        },
+        {
+          name: "voir_generation",
+          description: "Retourne l’état complet d’une génération de cours.",
+          inputSchema: { type: "object", properties: { generationId: { type: "number" } }, required: ["generationId"] }
+        },
+        {
+          name: "finaliser_cours",
+          description: "Crée le cours visible après un rapport de vérification positif.",
+          inputSchema: { type: "object", properties: { generationId: { type: "number" } }, required: ["generationId"] }
+        },
+        {
+          name: "signaler_echec",
+          description: "Clôture une génération refusée sans créer de cours.",
+          inputSchema: { type: "object", properties: { generationId: { type: "number" }, verificationReport: { type: "object" }, technicalError: { type: "string" } }, required: ["generationId"] }
+        },
         {
           name: "creer_cours",
           description:
@@ -197,6 +249,26 @@ export class CreateurMCPServer {
 
       try {
         switch (name) {
+          case "preparer_formation":
+            return this.json(await this.orchestration.preparerFormation(args));
+          case "lister_arborescence":
+            return this.json(await this.handleListerArborescence());
+          case "generer_candidat_cours":
+            return this.json(await this.orchestration.genererCandidat(args));
+          case "generer_illustrations":
+            return this.json(await this.orchestration.genererIllustrations(args));
+          case "associer_illustrations":
+            return this.json(this.orchestration.associerIllustrations(args));
+          case "verifier_candidat":
+            return this.json(await this.orchestration.verifierCandidat(args));
+          case "corriger_candidat":
+            return this.json(await this.orchestration.corrigerCandidat(args));
+          case "voir_generation":
+            return this.json(await this.coursRepository.voirGeneration(args.generationId));
+          case "finaliser_cours":
+            return this.json(await this.coursRepository.finaliserGeneration(args.generationId));
+          case "signaler_echec":
+            return this.json(await this.coursRepository.echouerGeneration(args.generationId, { verificationReport: args.verificationReport, technicalError: args.technicalError }));
           case "creer_cours":
             return this.handleCreerCours(args);
           case "lister_technologies":
@@ -217,43 +289,32 @@ export class CreateurMCPServer {
             throw new Error("Outil inconnu");
         }
       } catch (error) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: error.message,
-              isError: true
-            }
-          ]
-        };
+        return { isError: true, content: [{ type: "text", text: JSON.stringify({ error: error instanceof Error ? error.message : "Erreur inconnue" }) }] };
       }
     });
+  }
+
+  json(data) { return { content: [{ type: "text", text: JSON.stringify(data) }] }; }
+
+  async handleListerArborescence() {
+    const [superMenus, categories, menus, courses] = await Promise.all([
+      this.coursRepository.listerSuperMenus(),
+      this.coursRepository.listerCategories(),
+      this.coursRepository.listerMenus(),
+      this.listerCoursUseCase.coursIA()
+    ]);
+
+    return { superMenus, categories, menus, courses };
   }
 
   async handleCreerCours(args) {
     const { titre, description, technologie, niveau, duree } = args || {};
 
-    const result = await this.creerCoursUseCase.executer({
-      titre,
-      description,
-      technologie,
-      niveau,
-      duree
+    return this.json({
+      deprecated: true,
+      message: "La création directe est désactivée : utilisez le candidat, la vérification, puis finaliser_cours.",
+      candidate: await this.orchestration.genererCandidat({ title: titre, description, technology: technologie, level: niveau, duration: duree })
     });
-
-    let response = `✅ **Cours créé**\n\n`;
-    response += `📘 Titre : **${result.cours.title}**\n`;
-    response += `🧪 Technologie : ${result.cours.technology?.name}\n`;
-    response += `🎯 Niveau : ${result.cours.level?.name}\n`;
-    response += `⏱️ Durée : ${result.cours.duration}\n`;
-    response += `🆔 ID : ${result.id}\n`;
-    response += `📌 Statut : brouillon\n`;
-
-    if (result.cours.objectifs) {
-      response += `\n🎯 Objectifs :\n${result.cours.objectifs}`;
-    }
-
-    return { content: [{ type: "text", text: response }] };
   }
 
   async handleListerTechnologies() {

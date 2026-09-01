@@ -59,6 +59,30 @@ export class SymfonyApiCoursRepository extends ICoursRepository {
     return this.normalizeCollection(data).map((item) => this.mapReference(item));
   }
 
+  async listerCategories() {
+    return this.normalizeCollection(await this.requestJson("/api/admin/categories"));
+  }
+
+  async listerSuperMenus() {
+    return this.normalizeCollection(await this.requestJson("/api/admin/super-menus"));
+  }
+
+  async creerSuperMenu(name) {
+    return this.requestJson("/api/admin/super-menus", { method: "POST", body: JSON.stringify({ name }) });
+  }
+
+  async creerTechnologie(data) {
+    return this.requestJson("/api/admin/categories", { method: "POST", body: JSON.stringify(data) });
+  }
+
+  async listerPositionsMenus() {
+    return this.normalizeCollection(await this.requestJson("/api/admin/positions-menus"));
+  }
+
+  async creerPositionMenu(position) {
+    return this.requestJson("/api/admin/positions-menus", { method: "POST", body: JSON.stringify({ position }) });
+  }
+
   async trouverTechnologieParNom(nom) {
     const technologies = await this.listerTechnologies();
     return this.findByName(technologies, nom);
@@ -168,6 +192,38 @@ export class SymfonyApiCoursRepository extends ICoursRepository {
       : await this.requestJson("/api/admin/agent-cours/revisions");
 
     return this.normalizeCollection(data).map((item) => this.mapRevision(item));
+  }
+
+  async creerGeneration(data) {
+    return this.requestJson("/api/admin/agent-cours/generations", { method: "POST", body: JSON.stringify(data) });
+  }
+
+  async voirGeneration(id) {
+    return this.requestJson(`/api/admin/agent-cours/generations/${id}`);
+  }
+
+  async mettreAJourGeneration(id, data) {
+    return this.requestJson(`/api/admin/agent-cours/generations/${id}`, { method: "PUT", body: JSON.stringify(data) });
+  }
+
+  async finaliserGeneration(id) {
+    return this.requestJson(`/api/admin/agent-cours/generations/${id}/finaliser`, { method: "POST", body: "{}" });
+  }
+
+  async echouerGeneration(id, data) {
+    return this.requestJson(`/api/admin/agent-cours/generations/${id}/echouer`, { method: "POST", body: JSON.stringify(data) });
+  }
+
+  async envoyerMedia({ buffer, filename, altText, caption, prompt, generationId }) {
+    const form = new FormData();
+    form.set("file", new Blob([buffer], { type: "image/png" }), filename || "illustration.png");
+    form.set("altText", altText);
+    if (caption) form.set("caption", caption);
+    if (prompt) form.set("prompt", prompt);
+    if (generationId) form.set("generationId", String(generationId));
+    const response = await fetch(`${this.baseUrl}/api/admin/course-media`, { method: "POST", headers: this.apiKey ? { "X-API-KEY": this.apiKey } : {}, body: form });
+    if (!response.ok) throw new Error(`Symfony API ${response.status}: ${await this.extractErrorMessage(response)}`);
+    return response.json();
   }
 
   async requestJson(path, options = {}) {

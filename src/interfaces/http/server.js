@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import crypto from "crypto";
 import { setupRoutes } from "./routes.js";
 
 export class HTTPServer {
@@ -43,6 +44,15 @@ export class HTTPServer {
 
     this.app.get("/health", (_req, res) => {
       res.json({ status: "ok", timestamp: new Date().toISOString() });
+    });
+
+    this.app.use((req, res, next) => {
+      const expected = this.config.http.orchestrationToken;
+      if (!expected) return res.status(503).json({ error: "ORCHESTRATION_API_TOKEN non configuré" });
+      const received = req.get("authorization")?.replace(/^Bearer\s+/i, "") || "";
+      const valid = received.length === expected.length && crypto.timingSafeEqual(Buffer.from(received), Buffer.from(expected));
+      if (!valid) return res.status(401).json({ error: "Jeton d’orchestration invalide" });
+      return next();
     });
   }
 
