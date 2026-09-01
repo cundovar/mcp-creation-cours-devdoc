@@ -1,6 +1,7 @@
 import { ICoursRepository } from "../../domain/ports/ICoursRepository.js";
 import { Cours } from "../../domain/entities/Cours.js";
 import { Revision } from "../../domain/entities/Revision.js";
+import { createHash } from "node:crypto";
 
 export class SymfonyApiCoursRepository extends ICoursRepository {
   constructor(config) {
@@ -224,6 +225,30 @@ export class SymfonyApiCoursRepository extends ICoursRepository {
     const response = await fetch(`${this.baseUrl}/api/admin/course-media`, { method: "POST", headers: this.apiKey ? { "X-API-KEY": this.apiKey } : {}, body: form });
     if (!response.ok) throw new Error(`Symfony API ${response.status}: ${await this.extractErrorMessage(response)}`);
     return response.json();
+  }
+
+  async lireMedia(image) {
+    const configuredBase = new URL(this.baseUrl);
+    const mediaUrl = new URL(String(image?.url || ""), configuredBase);
+    if (mediaUrl.origin !== configuredBase.origin || !mediaUrl.pathname.startsWith("/uploads/course-media/")) {
+      throw new Error("URL de média Symfony non autorisée");
+    }
+    const response = await fetch(mediaUrl, {
+      headers: {
+        Accept: "image/png,image/jpeg,image/webp",
+        ...(this.apiKey ? { "X-API-KEY": this.apiKey } : {})
+      }
+    });
+    if (!response.ok) throw new Error(`Symfony media ${response.status}: ${response.statusText || "lecture impossible"}`);
+    const mimeType = String(response.headers.get("content-type") || image.mimeType || "").split(";", 1)[0].toLowerCase();
+    if (!["image/png", "image/jpeg", "image/webp"].includes(mimeType)) throw new Error("Type de média Symfony non autorisé");
+    const declaredLength = Number(response.headers.get("content-length") || 0);
+    if (declaredLength > 8_000_000) throw new Error("Média Symfony trop volumineux");
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!buffer.length || buffer.length > 8_000_000) throw new Error("Média Symfony vide ou trop volumineux");
+    const checksum = createHash("sha256").update(buffer).digest("hex");
+    if (image.checksum && checksum !== image.checksum) throw new Error("L’empreinte du média Symfony ne correspond pas");
+    return `data:${mimeType};base64,${buffer.toString("base64")}`;
   }
 
   async requestJson(path, options = {}) {
