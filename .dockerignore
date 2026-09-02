@@ -1,0 +1,17 @@
+node_modules
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+test
+docs
+.agents
+.codex
+.vscode
+.idea
+coverage
+*.log
+Dockerfile
+.dockerignore
+README.md
