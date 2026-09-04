@@ -115,6 +115,34 @@ describe("DevDocRemoteMCPServer", () => {
     expect(result.generationId).toBe(8);
   });
 
+  it("régénère un brouillon précédemment échoué avec le même requestId", async () => {
+    const failed = {
+      id: 8,
+      status: "failed",
+      candidate: {
+        title: "Python",
+        codeHTML: "<main class=\"principal\"><h1>Ancien échec</h1></main>",
+        illustrations: [{ prompt: "ancienne image" }]
+      },
+      verificationReport: { approved: false },
+      courseId: null
+    };
+    const { subject, orchestration } = createSubject({
+      repository: { creerGeneration: vi.fn(async () => failed) }
+    });
+
+    const result = await subject.createDraft({
+      requestId: "chat-python-003",
+      titre: "Python",
+      technologie: "Python",
+      niveau: "Débutant",
+      duree: "1h"
+    });
+
+    expect(orchestration.genererCandidat).toHaveBeenCalledOnce();
+    expect(result.readyToPublish).toBe(true);
+  });
+
   it("refuse la publication sans confirmation explicite", async () => {
     const { subject, repository } = createSubject();
 

@@ -217,7 +217,7 @@ export class DevDocRemoteMCPServer {
       payload
     });
 
-    if (generation.courseId || generation.candidate) {
+    if (generation.courseId || (generation.candidate && generation.status !== "failed")) {
       return this.summarizeGeneration(generation, {
         reused: true,
         message:
