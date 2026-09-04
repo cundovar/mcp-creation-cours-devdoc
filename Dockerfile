@@ -11,6 +11,8 @@ RUN npm ci --omit=dev
 COPY config ./config
 COPY src ./src
 
+RUN mkdir -p /app/data/oauth && chown -R node:node /app/data
+
 USER node
 
 EXPOSE 3000
