@@ -148,6 +148,7 @@ button{background:#10b981;color:#06281e;font-weight:700;cursor:pointer}
     const target = new URL(pending.params.redirectUri);
     target.searchParams.set("code", code);
     if (pending.params.state) target.searchParams.set("state", pending.params.state);
+    target.searchParams.set("iss", this.issuer.href);
     res.redirect(302, target.href);
   }
 

@@ -117,6 +117,22 @@ export class HTTPServer {
 
     this.app.get("/login", (req, res) => provider.loginPage(req, res));
     this.app.post("/login", (req, res) => provider.approve(req, res));
+    this.app.get("/.well-known/oauth-authorization-server", (_req, res) => {
+      res.json({
+        issuer: publicBase.href,
+        authorization_endpoint: new URL("/authorize", publicBase).href,
+        token_endpoint: new URL("/token", publicBase).href,
+        registration_endpoint: new URL("/register", publicBase).href,
+        revocation_endpoint: new URL("/revoke", publicBase).href,
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code", "refresh_token"],
+        code_challenge_methods_supported: ["S256"],
+        token_endpoint_auth_methods_supported: ["client_secret_post", "none"],
+        revocation_endpoint_auth_methods_supported: ["client_secret_post"],
+        scopes_supported: ["mcp:devdoc"],
+        authorization_response_iss_parameter_supported: true
+      });
+    });
     this.app.use(
       mcpAuthRouter({
         provider,
