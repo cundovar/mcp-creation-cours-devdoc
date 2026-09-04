@@ -6,7 +6,7 @@ const ALLOWED_TAGS = new Set([
   "ul", "ol", "li", "dl", "dt", "dd", "blockquote", "pre", "code",
   "strong", "em", "b", "i", "u", "mark", "small", "kbd", "samp",
   "table", "caption", "thead", "tbody", "tfoot", "tr", "th", "td",
-  "figure", "figcaption", "img", "a", "details", "summary"
+  "figure", "figcaption", "a", "details", "summary"
 ]);
 
 const GLOBAL_ATTRIBUTES = new Set(["class", "id", "title", "lang", "dir", "role", "aria-label"]);
@@ -78,11 +78,8 @@ export class DeterministicCourseValidator {
 
     if (principalMainCount !== 1) issues.push(this.issue("INVALID_HTML", "blocking", "document", "Le document doit contenir exactement une balise main.principal.", "Respecter la structure HTML attendue."));
     if (parseErrors.length) issues.push(this.issue("INVALID_HTML", "blocking", "document", "Le document contient du HTML mal formé.", "Corriger la syntaxe HTML avant vérification."));
-    if (images.length > 3) issues.push(this.issue("TOO_MANY_IMAGES", "blocking", "illustrations", "Plus de trois illustrations sont demandées.", "Limiter le cours à trois illustrations."));
-
-    for (const image of images) {
-      if (!String(image.altText || "").trim()) issues.push(this.issue("MISSING_ALT", "blocking", "illustration", "Une image ne possède pas de texte alternatif.", "Ajouter un altText descriptif."));
-      if (!image.url || !referencedImages.has(image.url)) issues.push(this.issue("MISSING_MEDIA_REFERENCE", "blocking", "illustration", "Un média stocké n’est pas référencé dans le HTML final.", "Insérer le média Symfony dans le cours ou le supprimer."));
+    if ((Array.isArray(candidate?.illustrations) && candidate.illustrations.length > 0) || images.length > 0) {
+      issues.push(this.issue("IMAGES_NOT_ALLOWED", "blocking", "illustrations", "Ce cours est configuré sans images.", "Conserver illustrations à [] et utiliser des tableaux ou schémas HTML."));
     }
 
     return this.uniqueIssues(issues);

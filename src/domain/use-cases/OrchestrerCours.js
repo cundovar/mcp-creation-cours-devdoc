@@ -45,8 +45,14 @@ export class OrchestrerCours {
   async genererCandidat({ title, description, technology, level, duration }) {
     const specifications = { sujet: title, technologie: technology, niveau: level, duree: duration };
     const [codeHTML, objectives] = await Promise.all([this.iaService.genererCours(specifications), this.iaService.genererObjectifs(specifications)]);
-    const illustrations = await this.iaService.genererPlanIllustrations(specifications, codeHTML);
-    return { title, description: description || `Cours ${title} généré automatiquement`, codeHTML, objectives, duration, illustrations };
+    return {
+      title,
+      description: description || `Cours ${title} généré automatiquement`,
+      codeHTML,
+      objectives,
+      duration,
+      illustrations: []
+    };
   }
 
   async genererIllustrations({ generationId, illustrations = [] }) {
@@ -69,22 +75,23 @@ export class OrchestrerCours {
     main.childNodes.push(...parseFragment(figures).childNodes);
     const codeHTML = serialize(document);
     for (const image of images) if (!codeHTML.includes(`src="${image.url}"`)) throw new Error(`Illustration non insérée: ${image.id || image.url}`);
-    return { ...candidate, codeHTML };
+    return { ...candidate, codeHTML, illustrations: [] };
   }
 
   async verifierCandidat({ candidate, images = [] }) {
-    const deterministicIssues = this.validator.validate(candidate, images);
-    if (deterministicIssues.length) return this.verifier.verify({ candidate, images, deterministicIssues });
+    const imageFreeCandidate = { ...candidate, illustrations: [] };
+    const deterministicIssues = this.validator.validate(imageFreeCandidate, images);
+    if (deterministicIssues.length) return this.verifier.verify({ candidate: imageFreeCandidate, images, deterministicIssues });
     const verifiedImages = await Promise.all(images.map(async (image) => ({
       ...image,
       dataUrl: await this.repository.lireMedia(image)
     })));
-    return this.verifier.verify({ candidate, images: verifiedImages, deterministicIssues });
+    return this.verifier.verify({ candidate: imageFreeCandidate, images: verifiedImages, deterministicIssues });
   }
 
   async corrigerCandidat({ candidate, report, technology, level }) {
     const codeHTML = await this.iaService.ameliorerCours(candidate.codeHTML, report.issues.map((issue) => issue.correction || issue.message).join("\n"), { titre: candidate.title, technologie: technology, niveau: level, duree: candidate.duration });
-    return { ...candidate, codeHTML };
+    return { ...candidate, codeHTML, illustrations: [] };
   }
 
   same(left, right) { return String(left || "").trim().toLocaleLowerCase("fr") === String(right || "").trim().toLocaleLowerCase("fr"); }

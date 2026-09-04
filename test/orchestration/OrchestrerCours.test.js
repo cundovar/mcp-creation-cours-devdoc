@@ -38,6 +38,29 @@ describe("OrchestrerCours", () => {
     expect(result.menus[0].id).toBe(result.menus[1].id);
   });
 
+  it("génère un candidat sans appeler le planificateur d’illustrations", async () => {
+    let plannerCalled = false;
+    const iaService = {
+      genererCours: async () => '<main class="principal"><h1>Python</h1></main>',
+      genererObjectifs: async () => "- Comprendre Python",
+      genererPlanIllustrations: async () => {
+        plannerCalled = true;
+        return [{ prompt: "image" }];
+      }
+    };
+    const service = new OrchestrerCours({}, iaService, null, {}, new DeterministicCourseValidator());
+
+    const result = await service.genererCandidat({
+      title: "Python",
+      technology: "Python",
+      level: "Débutant",
+      duration: "2h"
+    });
+
+    expect(plannerCalled).toBe(false);
+    expect(result.illustrations).toEqual([]);
+  });
+
   it("insère les illustrations même si le HTML contient un commentaire final", () => {
     const service = new OrchestrerCours({}, {}, null, {}, new DeterministicCourseValidator());
     const result = service.associerIllustrations({
@@ -67,8 +90,19 @@ describe("OrchestrerCours", () => {
     ]));
   });
 
-  it("autorise les ancres et les médias Symfony internes", () => {
-    const codeHTML = '<main class="principal"><a href="#pratique">Pratique</a><figure><img src="/uploads/course-media/cours.png" alt="Schéma du cours"></figure></main>';
-    expect(new DeterministicCourseValidator().validate({ codeHTML })).toEqual([]);
+  it("autorise les tableaux et schémas HTML sans image", () => {
+    const codeHTML = '<main class="principal"><h1>Python</h1><table><caption>Flux</caption><tbody><tr><th>Entrée</th><td>Traitement → résultat</td></tr></tbody></table></main>';
+    expect(new DeterministicCourseValidator().validate({ codeHTML, illustrations: [] })).toEqual([]);
+  });
+
+  it("bloque toute image ou demande d’illustration", () => {
+    const validator = new DeterministicCourseValidator();
+    expect(validator.validate({
+      codeHTML: '<main class="principal"><img src="/uploads/course-media/cours.png" alt="Schéma"></main>',
+      illustrations: [{ prompt: "image" }]
+    })).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "FORBIDDEN_TAG", severity: "blocking" }),
+      expect.objectContaining({ code: "IMAGES_NOT_ALLOWED", severity: "blocking" })
+    ]));
   });
 });
