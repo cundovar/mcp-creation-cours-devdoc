@@ -1,6 +1,8 @@
 import { createRequire } from "module";
 import { SymfonyApiCoursRepository } from "../api/SymfonyApiCoursRepository.js";
 import { DeepSeekService } from "../ia/DeepSeekService.js";
+import { BridgeClient } from "../ia/BridgeClient.js";
+import { BridgeIAService } from "../ia/BridgeIAService.js";
 import { CreerCours } from "../../domain/use-cases/CreerCours.js";
 import { ReviserCours } from "../../domain/use-cases/ReviserCours.js";
 import { ListerCours } from "../../domain/use-cases/ListerCours.js";
@@ -53,9 +55,15 @@ export class Container {
 
   getIAService() {
     if (!this.instances.iaService) {
-      this.instances.iaService = new DeepSeekService(
-        this.config.deepseek.apiKey
-      );
+      if (this.config.ai?.executionMode === "bridge") {
+        this.instances.iaService = new BridgeIAService(
+          new BridgeClient(this.config.ai.bridge)
+        );
+      } else {
+        this.instances.iaService = new DeepSeekService(
+          this.config.deepseek.apiKey
+        );
+      }
     }
 
     return this.instances.iaService;

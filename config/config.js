@@ -26,6 +26,16 @@ export const config = {
     apiKey: process.env.N8N_API_KEY || "",
     niveauxPath: process.env.SYMFONY_API_NIVEAUX_PATH || "/api/admin/niveau-cours"
   },
+  ai: {
+    executionMode: process.env.AI_EXECUTION_MODE || "direct",
+    bridge: {
+      socketPath:
+        process.env.CLI_AGENT_BRIDGE_SOCKET || "/run/cli-agent-bridge/bridge.sock",
+      project: process.env.CLI_AGENT_BRIDGE_PROJECT || "devdoc",
+      token: process.env.CLI_AGENT_BRIDGE_TOKEN || "",
+      timeoutMs: Number.parseInt(process.env.CLI_AGENT_BRIDGE_TIMEOUT_MS || "310000", 10)
+    }
+  },
   deepseek: {
     apiKey: process.env.DEEPSEEK_API_KEY
   },
@@ -45,9 +55,13 @@ export const config = {
 };
 
 export function validateConfig() {
-  const required = {
-    DEEPSEEK_API_KEY: config.deepseek.apiKey
-  };
+  const required = {};
+
+  if (config.ai.executionMode === "bridge") {
+    required.CLI_AGENT_BRIDGE_TOKEN = config.ai.bridge.token;
+  } else {
+    required.DEEPSEEK_API_KEY = config.deepseek.apiKey;
+  }
 
   if (config.repositoryDriver === "mysql") {
     Object.assign(required, {
