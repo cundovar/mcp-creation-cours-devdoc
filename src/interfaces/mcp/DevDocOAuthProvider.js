@@ -1,6 +1,16 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[character]);
+}
+
 function secret() {
   return crypto.randomBytes(32).toString("base64url");
 }
@@ -88,13 +98,7 @@ export class DevDocOAuthProvider {
       return;
     }
 
-    const escapedRequestId = requestId.replace(/[&<>"']/g, (character) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#39;"
-    })[character]);
+    const escapedRequestId = escapeHtml(requestId);
 
     res.setHeader("Cache-Control", "no-store");
     res.type("html").send(`<!doctype html>
@@ -149,7 +153,29 @@ button{background:#10b981;color:#06281e;font-weight:700;cursor:pointer}
     target.searchParams.set("code", code);
     if (pending.params.state) target.searchParams.set("state", pending.params.state);
     target.searchParams.set("iss", this.issuer.href);
-    res.redirect(302, target.href);
+
+    const escapedTarget = escapeHtml(target.href);
+    res.setHeader("Cache-Control", "no-store");
+    res.status(200).type("html").send(`<!doctype html>
+<html lang="fr">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<meta http-equiv="refresh" content="1;url=${escapedTarget}">
+<title>Autorisation DevDoc acceptée</title>
+<style>
+body{font:16px system-ui;background:#111827;color:#f9fafb;display:grid;place-items:center;min-height:100vh;margin:0}
+.card{width:min(440px,90vw);background:#1f2937;padding:28px;border-radius:16px}
+a{box-sizing:border-box;display:block;width:100%;padding:12px;margin-top:18px;border-radius:8px;background:#10b981;color:#06281e;font-weight:700;text-align:center;text-decoration:none}
+.muted{color:#9ca3af;font-size:14px}
+</style>
+<div class="card">
+<h1>Autorisation acceptée</h1>
+<p>Retour automatique vers votre assistant…</p>
+<p class="muted">Si la page reste affichée, utilisez le bouton ci-dessous.</p>
+<a href="${escapedTarget}">Retourner à ChatGPT ou Claude</a>
+</div>
+</html>`);
+
   }
 
   async challengeForAuthorizationCode(_client, code) {

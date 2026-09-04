@@ -48,20 +48,25 @@ describe("DevDocOAuthProvider", () => {
     );
 
     const requestId = new URL(loginLocation, issuer).searchParams.get("request");
-    let callbackLocation;
+    let confirmationPage;
+    const response = {
+      setHeader: () => response,
+      status: () => response,
+      type: () => response,
+      send: (body) => {
+        confirmationPage = body;
+        return response;
+      }
+    };
     provider.approve(
       { body: { request: requestId, password: "secret" } },
-      {
-        redirect: (_status, location) => {
-          callbackLocation = location;
-        },
-        status: () => {
-          throw new Error("Le mot de passe devrait être accepté");
-        }
-      }
+      response
     );
 
-    const callback = new URL(callbackLocation);
+    expect(confirmationPage).toContain("Autorisation acceptée");
+    expect(confirmationPage).toContain("Retourner à ChatGPT ou Claude");
+    const encodedLocation = confirmationPage.match(/<a href="([^"]+)"/)[1];
+    const callback = new URL(encodedLocation.replaceAll("&amp;", "&"));
     expect(callback.searchParams.get("code")).toBeTruthy();
     expect(callback.searchParams.get("state")).toBe("oauth-state");
     expect(callback.searchParams.get("iss")).toBe(issuer.href);
