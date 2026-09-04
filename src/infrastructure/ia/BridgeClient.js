@@ -11,7 +11,7 @@ export class BridgeClient {
     this.timeoutMs = timeoutMs || 310000;
   }
 
-  async completeJson(agent, payload) {
+  async completeJson(agent, payload, attachments = []) {
     const response = await this.send({
       version: 1,
       operation: "complete_json",
@@ -19,7 +19,8 @@ export class BridgeClient {
       token: this.token,
       agent,
       requestId: crypto.randomUUID(),
-      payload
+      payload,
+      attachments
     });
 
     if (response.ok === false) {

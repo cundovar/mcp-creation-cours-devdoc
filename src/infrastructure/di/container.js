@@ -3,6 +3,7 @@ import { SymfonyApiCoursRepository } from "../api/SymfonyApiCoursRepository.js";
 import { DeepSeekService } from "../ia/DeepSeekService.js";
 import { BridgeClient } from "../ia/BridgeClient.js";
 import { BridgeIAService } from "../ia/BridgeIAService.js";
+import { BridgeVerificationService } from "../ia/BridgeVerificationService.js";
 import { CreerCours } from "../../domain/use-cases/CreerCours.js";
 import { ReviserCours } from "../../domain/use-cases/ReviserCours.js";
 import { ListerCours } from "../../domain/use-cases/ListerCours.js";
@@ -22,8 +23,6 @@ export class Container {
 
   getDatabasePool() {
     if (!this.instances.databasePool) {
-      // Lazy-load MySQL only when the legacy driver is explicitly selected.
-      // This keeps the Symfony bootstrap free of missing database modules.
       const { createPool } = require("../database/connection.js");
       this.instances.databasePool = createPool({
         host: this.config.database.host,
@@ -35,6 +34,13 @@ export class Container {
     }
 
     return this.instances.databasePool;
+  }
+
+  getBridgeClient() {
+    if (!this.instances.bridgeClient) {
+      this.instances.bridgeClient = new BridgeClient(this.config.ai.bridge);
+    }
+    return this.instances.bridgeClient;
   }
 
   getCoursRepository() {
@@ -56,9 +62,7 @@ export class Container {
   getIAService() {
     if (!this.instances.iaService) {
       if (this.config.ai?.executionMode === "bridge") {
-        this.instances.iaService = new BridgeIAService(
-          new BridgeClient(this.config.ai.bridge)
-        );
+        this.instances.iaService = new BridgeIAService(this.getBridgeClient());
       } else {
         this.instances.iaService = new DeepSeekService(
           this.config.deepseek.apiKey
@@ -67,6 +71,19 @@ export class Container {
     }
 
     return this.instances.iaService;
+  }
+
+  getVerificationService() {
+    if (!this.instances.verificationService) {
+      this.instances.verificationService =
+        this.config.ai?.executionMode === "bridge"
+          ? new BridgeVerificationService(this.getBridgeClient())
+          : new OpenAIVerificationService(
+              this.config.openai.apiKey,
+              this.config.openai.verifierModel
+            );
+    }
+    return this.instances.verificationService;
   }
 
   getCreerCoursUseCase() {
@@ -87,9 +104,16 @@ export class Container {
 
   getCourseOrchestrationService() {
     if (!this.instances.courseOrchestration) {
-      const imageService = this.config.openai.apiKey ? new OpenAIImageService(this.config.openai.apiKey, this.config.openai.imageModel) : null;
-      const verifier = new OpenAIVerificationService(this.config.openai.apiKey, this.config.openai.verifierModel);
-      this.instances.courseOrchestration = new OrchestrerCours(this.getCoursRepository(), this.getIAService(), imageService, verifier, new DeterministicCourseValidator());
+      const imageService = this.config.openai.apiKey
+        ? new OpenAIImageService(this.config.openai.apiKey, this.config.openai.imageModel)
+        : null;
+      this.instances.courseOrchestration = new OrchestrerCours(
+        this.getCoursRepository(),
+        this.getIAService(),
+        imageService,
+        this.getVerificationService(),
+        new DeterministicCourseValidator()
+      );
     }
     return this.instances.courseOrchestration;
   }
