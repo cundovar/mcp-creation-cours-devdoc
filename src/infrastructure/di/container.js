@@ -1,6 +1,9 @@
 import { createRequire } from "module";
 import { SymfonyApiCoursRepository } from "../api/SymfonyApiCoursRepository.js";
 import { DeepSeekService } from "../ia/DeepSeekService.js";
+import { BridgeIAService } from "../ia/BridgeIAService.js";
+import { BridgeVerificationService } from "../ia/BridgeVerificationService.js";
+import { CliAgentBridgeClient } from "../ia/CliAgentBridgeClient.js";
 import { CreerCours } from "../../domain/use-cases/CreerCours.js";
 import { ReviserCours } from "../../domain/use-cases/ReviserCours.js";
 import { ListerCours } from "../../domain/use-cases/ListerCours.js";
@@ -51,11 +54,22 @@ export class Container {
     return this.instances.coursRepository;
   }
 
+  getBridgeClient() {
+    if (!this.instances.bridgeClient) {
+      this.instances.bridgeClient = new CliAgentBridgeClient(this.config.cliAgentBridge);
+    }
+    return this.instances.bridgeClient;
+  }
+
   getIAService() {
     if (!this.instances.iaService) {
-      this.instances.iaService = new DeepSeekService(
-        this.config.deepseek.apiKey
-      );
+      if (this.config.aiExecutionMode === "bridge") {
+        this.instances.iaService = new BridgeIAService(this.getBridgeClient());
+      } else {
+        this.instances.iaService = new DeepSeekService(
+          this.config.deepseek.apiKey
+        );
+      }
     }
 
     return this.instances.iaService;
@@ -77,11 +91,21 @@ export class Container {
     return new GererMenus(this.getCoursRepository());
   }
 
+  getVerificationService() {
+    if (!this.instances.verifier) {
+      if (this.config.aiExecutionMode === "bridge") {
+        this.instances.verifier = new BridgeVerificationService(this.getBridgeClient());
+      } else {
+        this.instances.verifier = new OpenAIVerificationService(this.config.openai.apiKey, this.config.openai.verifierModel);
+      }
+    }
+    return this.instances.verifier;
+  }
+
   getCourseOrchestrationService() {
     if (!this.instances.courseOrchestration) {
       const imageService = this.config.openai.apiKey ? new OpenAIImageService(this.config.openai.apiKey, this.config.openai.imageModel) : null;
-      const verifier = new OpenAIVerificationService(this.config.openai.apiKey, this.config.openai.verifierModel);
-      this.instances.courseOrchestration = new OrchestrerCours(this.getCoursRepository(), this.getIAService(), imageService, verifier, new DeterministicCourseValidator());
+      this.instances.courseOrchestration = new OrchestrerCours(this.getCoursRepository(), this.getIAService(), imageService, this.getVerificationService(), new DeterministicCourseValidator());
     }
     return this.instances.courseOrchestration;
   }

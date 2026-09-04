@@ -14,6 +14,7 @@ export const config = {
     isProduction: process.env.NODE_ENV === "production"
   },
   repositoryDriver: process.env.REPOSITORY_DRIVER || "mysql",
+  aiExecutionMode: process.env.AI_EXECUTION_MODE || "api",
   database: {
     host: process.env.DB_HOST || "localhost",
     port: Number.parseInt(process.env.DB_PORT || "3306", 10),
@@ -28,6 +29,12 @@ export const config = {
   },
   deepseek: {
     apiKey: process.env.DEEPSEEK_API_KEY
+  },
+  cliAgentBridge: {
+    socketPath: process.env.CLI_AGENT_BRIDGE_SOCKET || "/run/cli-agent-bridge/bridge.sock",
+    project: process.env.CLI_AGENT_BRIDGE_PROJECT || "devdoc",
+    token: process.env.CLI_AGENT_BRIDGE_TOKEN || "",
+    timeoutMs: Number.parseInt(process.env.CLI_AGENT_BRIDGE_TIMEOUT_MS || "310000", 10)
   },
   openai: {
     apiKey: process.env.OPENAI_API_KEY,
@@ -45,9 +52,21 @@ export const config = {
 };
 
 export function validateConfig() {
-  const required = {
-    DEEPSEEK_API_KEY: config.deepseek.apiKey
-  };
+  const required = {};
+
+  if (config.aiExecutionMode === "api") {
+    Object.assign(required, {
+      DEEPSEEK_API_KEY: config.deepseek.apiKey
+    });
+  }
+
+  if (config.aiExecutionMode === "bridge") {
+    Object.assign(required, {
+      CLI_AGENT_BRIDGE_SOCKET: config.cliAgentBridge.socketPath,
+      CLI_AGENT_BRIDGE_PROJECT: config.cliAgentBridge.project,
+      CLI_AGENT_BRIDGE_TOKEN: config.cliAgentBridge.token
+    });
+  }
 
   if (config.repositoryDriver === "mysql") {
     Object.assign(required, {
