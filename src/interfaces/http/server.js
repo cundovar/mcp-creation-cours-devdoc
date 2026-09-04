@@ -49,7 +49,9 @@ export class HTTPServer {
     );
     this.app.use(
       helmet({
-        crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
+        // OAuth s’ouvre dans un nouvel onglet/fenêtre depuis ChatGPT mobile.
+        // Ne pas isoler le contexte de navigation avant le callback.
+        crossOriginOpenerPolicy: false,
         crossOriginResourcePolicy: { policy: "cross-origin" }
       })
     );
