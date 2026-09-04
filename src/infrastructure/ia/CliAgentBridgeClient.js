@@ -33,6 +33,9 @@ export class CliAgentBridgeClient {
       attachments
     };
     const response = await this.sendFrame(message);
+    if (response?.requestId !== requestId) {
+      throw new Error("Bridge response requestId mismatch");
+    }
     if (!response?.ok) {
       const error = response?.error || {};
       throw new Error(`Bridge ${error.code || "ERROR"}: ${error.message || "unknown error"}`);
@@ -88,5 +91,6 @@ function decodeFrame(buffer) {
   const length = buffer.readUInt32BE(0);
   if (length <= 0 || length > MAX_RESPONSE_BYTES) throw new Error("Bridge response length is invalid");
   if (buffer.length < HEADER_SIZE + length) throw new Error("Bridge response body is truncated");
+  if (buffer.length !== HEADER_SIZE + length) throw new Error("Bridge response has trailing data");
   return JSON.parse(buffer.subarray(HEADER_SIZE, HEADER_SIZE + length).toString("utf8"));
 }
