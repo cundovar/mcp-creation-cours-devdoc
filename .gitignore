@@ -30,6 +30,7 @@ build/
 coverage/
 .nyc_output/
 
-# Temporary files
+# Temporary and runtime files
 tmp/
 temp/
+data/
