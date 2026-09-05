@@ -334,8 +334,8 @@ export class SymfonyApiCoursRepository extends ICoursRepository {
       positionMenusName: item.positionMenus?.position ?? null,
       niveauCoursId: item.niveauCours?.id ?? null,
       niveauCoursName: item.niveauCours?.name ?? null,
-      pagesCount: Array.isArray(item.pages) ? item.pages.length : 0,
-      coursCount: Array.isArray(item.pageContents) ? item.pageContents.length : 0
+      pagesCount: Number(item.pagesCount ?? (Array.isArray(item.pages) ? item.pages.length : 0)),
+      coursCount: Number(item.coursCount ?? (Array.isArray(item.pageContents) ? item.pageContents.length : 0))
     };
   }
 
