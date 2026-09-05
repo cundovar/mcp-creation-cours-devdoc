@@ -28,6 +28,7 @@ function createSubject(overrides = {}) {
       verificationReport: { approved: true, issues: [] }
     })),
     echouerGeneration: vi.fn(),
+    trouverTechnologieParNom: vi.fn(async () => ({ id: 28, name: "typescript" })),
     trouverMenuParId: vi.fn(async () => ({ id: 92, categoryId: 28, niveauCoursId: 3 })),
     trouverTechnologieParNom: vi.fn(async () => ({ id: 28, name: "typescript" })),
     trouverNiveauParNom: vi.fn(async () => ({ id: 3, name: "newbie" })),
@@ -40,6 +41,7 @@ function createSubject(overrides = {}) {
     ...overrides.repository
   };
   const orchestration = {
+    preparerFormation: vi.fn(),
     genererCandidat: vi.fn(async () => ({
       title: "Python",
       duration: "2h",
@@ -224,6 +226,78 @@ describe("DevDocRemoteMCPServer", () => {
 
     expect(result.menus).toEqual([{ id: 1, categoryId: 28, niveauCoursId: 3 }]);
     expect(result.ignoredInvalidMenus).toBe(2);
+  });
+
+  it("propose une nouvelle arborescence pour une technologie inconnue sans la créer", async () => {
+    const { subject, repository } = createSubject({
+      repository: {
+        trouverTechnologieParNom: vi.fn(async () => null)
+      }
+    });
+
+    const result = await subject.createDraft({
+      requestId: "chat-n8n-001",
+      titre: "Premiers pas avec n8n",
+      technologie: "n8n",
+      niveau: "newbie",
+      duree: "2h"
+    });
+
+    expect(result.requiresPlacement).toBe(true);
+    expect(result.placement.superMenu).toBe("Automatisation");
+    expect(repository.creerGeneration).not.toHaveBeenCalled();
+  });
+
+  it("demande confirmation avant de créer supermenu, catégorie et menu", async () => {
+    const { subject, orchestration } = createSubject({
+      repository: {
+        listerSuperMenus: vi.fn(async () => []),
+        listerCategories: vi.fn(async () => []),
+        listerMenus: vi.fn(async () => [])
+      }
+    });
+
+    const result = await subject.preparePlacement({
+      superMenu: "Automatisation",
+      category: "n8n",
+      menus: [{ name: "Premiers pas avec n8n", level: "newbie", position: "menu-gauche" }]
+    });
+
+    expect(result.requiresConfirmation).toBe(true);
+    expect(result.changes).toEqual([
+      { type: "supermenu", name: "Automatisation" },
+      { type: "category", name: "n8n", superMenu: "Automatisation" },
+      { type: "menu", name: "Premiers pas avec n8n", level: "newbie", position: "menu-gauche" }
+    ]);
+    expect(orchestration.preparerFormation).not.toHaveBeenCalled();
+  });
+
+  it("crée l’arborescence après confirmation explicite", async () => {
+    const { subject, orchestration } = createSubject({
+      repository: {
+        listerSuperMenus: vi.fn(async () => []),
+        listerCategories: vi.fn(async () => []),
+        listerMenus: vi.fn(async () => [])
+      },
+      orchestration: {
+        preparerFormation: vi.fn(async () => ({
+          superMenu: { id: 9, name: "Automatisation" },
+          category: { id: 10, name: "n8n" },
+          menus: [{ id: 11, label: "Premiers pas avec n8n" }]
+        }))
+      }
+    });
+
+    const result = await subject.preparePlacement({
+      superMenu: "Automatisation",
+      category: "n8n",
+      menus: [{ name: "Premiers pas avec n8n", level: "newbie" }],
+      confirmation: true
+    });
+
+    expect(orchestration.preparerFormation).toHaveBeenCalledOnce();
+    expect(result.requiresConfirmation).toBe(false);
+    expect(result.category.id).toBe(10);
   });
 
 });

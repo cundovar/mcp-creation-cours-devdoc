@@ -30,6 +30,8 @@ export class DevDocRemoteMCPServer {
             return this.result(await this.createDraft(args));
           case "voir_brouillon_cours":
             return this.result(await this.getDraft(args));
+          case "preparer_emplacement_devdoc":
+            return this.result(await this.preparePlacement(args));
           case "reaffecter_brouillon_cours":
             return this.result(await this.reassignDraft(args));
           case "publier_cours_devdoc":
@@ -135,6 +137,56 @@ export class DevDocRemoteMCPServer {
         }
       },
       {
+        name: "preparer_emplacement_devdoc",
+        title: "Préparer un emplacement DevDoc",
+        description:
+          "Utilisez cet outil quand la technologie demandée n’existe pas encore ou quand l’utilisateur ne sait pas où classer le cours. Sans confirmation, il propose les créations. Avec confirmation=true, il crée uniquement le supermenu, la catégorie et les menus indiqués ; il ne crée ni ne publie de cours.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            superMenu: {
+              type: "string",
+              minLength: 2,
+              maxLength: 100,
+              description: "Supermenu souhaité, par exemple Automatisation."
+            },
+            category: {
+              type: "string",
+              minLength: 1,
+              maxLength: 100,
+              description: "Nouvelle technologie ou catégorie, par exemple n8n."
+            },
+            menus: {
+              type: "array",
+              maxItems: 20,
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  name: { type: "string", minLength: 1, maxLength: 150 },
+                  level: { type: "string", minLength: 1, maxLength: 100 },
+                  position: { type: "string", minLength: 1, maxLength: 100 }
+                },
+                required: ["name"]
+              }
+            },
+            confirmation: {
+              type: "boolean",
+              default: false,
+              description: "Obligatoire à true pour créer l’arborescence proposée."
+            }
+          },
+          required: ["superMenu", "category"]
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: true
+        }
+      },
+      {
         name: "reaffecter_brouillon_cours",
         title: "Réaffecter un brouillon DevDoc",
         description:
@@ -222,6 +274,61 @@ export class DevDocRemoteMCPServer {
     return this.processor.resume();
   }
 
+  async preparePlacement({ superMenu, category, menus = [], confirmation = false }) {
+    this.validatePlacementArgs({ superMenu, category, menus });
+    const [superMenus, categories] = await Promise.all([
+      this.repository.listerSuperMenus(),
+      this.repository.listerCategories()
+    ]);
+    const existingSuperMenu = superMenus.find((item) => this.same(item.name, superMenu));
+    const existingCategory = categories.find((item) => this.same(item.name, category));
+    if (existingCategory?.superMenu?.id && existingSuperMenu?.id && existingCategory.superMenu.id !== existingSuperMenu.id) {
+      throw new Error("Cette catégorie appartient déjà à un autre supermenu.");
+    }
+
+    const requestedMenus = menus.length ? menus : [{ name: "Cours", level: "newbie", position: "menu-gauche" }];
+    const categoryId = existingCategory?.id;
+    const existingMenus = categoryId
+      ? await this.repository.listerMenus({ categoryId })
+      : [];
+    const missingMenus = requestedMenus.filter((request) => !existingMenus.some((menu) =>
+      this.same(menu.label, request.name) &&
+      (!request.level || this.same(menu.niveauCoursName, request.level))
+    ));
+    const changes = [
+      ...(!existingSuperMenu ? [{ type: "supermenu", name: superMenu }] : []),
+      ...(!existingCategory ? [{ type: "category", name: category, superMenu: superMenu }] : []),
+      ...missingMenus.map((request) => ({
+        type: "menu",
+        name: request.name,
+        level: request.level || null,
+        position: request.position || null
+      }))
+    ];
+
+    if (changes.length && confirmation !== true) {
+      return {
+        requiresConfirmation: true,
+        confirmationRequired: true,
+        changes,
+        message: "Confirmez ces créations pour modifier l’arborescence DevDoc."
+      };
+    }
+
+    const formation = await this.orchestration.preparerFormation({
+      superMenu,
+      category,
+      menus: requestedMenus
+    });
+    return {
+      requiresConfirmation: false,
+      confirmationRequired: false,
+      created: changes,
+      ...formation,
+      message: "L’emplacement DevDoc est prêt. Utilisez le menu retourné pour créer le brouillon."
+    };
+  }
+
   async createDraft(args) {
     this.validateDraftArgs(args);
     const payload = {
@@ -235,6 +342,24 @@ export class DevDocRemoteMCPServer {
         ? { newMenuLabel: args.nouveauMenuLabel.trim() }
         : {})
     };
+
+    if (typeof this.repository.trouverTechnologieParNom === "function") {
+      const technology = await this.repository.trouverTechnologieParNom(payload.technology);
+      if (!technology) {
+        const suggestedSuperMenu = this.same(payload.technology, "n8n")
+          ? "Automatisation"
+          : "Nouvelles technologies";
+        return {
+          requiresPlacement: true,
+          placement: {
+            superMenu: suggestedSuperMenu,
+            category: payload.technology,
+            menus: [{ name: payload.title, level: payload.level, position: "menu-gauche" }]
+          },
+          message: "Cette technologie n’existe pas encore dans DevDoc. Utilisez preparer_emplacement_devdoc pour proposer sa création, puis demandez confirmation avant de relancer le cours."
+        };
+      }
+    }
 
     const generation = await this.repository.creerGeneration({
       batchId: "mcp-devdoc",
@@ -399,6 +524,19 @@ export class DevDocRemoteMCPServer {
       technicalError: generation?.technicalError || null,
       message: options.message
     };
+  }
+
+  validatePlacementArgs({ superMenu, category, menus }) {
+    if (typeof superMenu !== "string" || superMenu.trim() === "") throw new Error("superMenu est requis");
+    if (typeof category !== "string" || category.trim() === "") throw new Error("category est requis");
+    if (!Array.isArray(menus) || menus.length > 20) throw new Error("menus doit contenir au plus 20 éléments");
+    for (const menu of menus) {
+      if (!menu || typeof menu.name !== "string" || menu.name.trim() === "") throw new Error("Chaque menu doit avoir un nom");
+    }
+  }
+
+  same(left, right) {
+    return String(left || "").trim().toLocaleLowerCase("fr") === String(right || "").trim().toLocaleLowerCase("fr");
   }
 
   validateDraftArgs(args) {
