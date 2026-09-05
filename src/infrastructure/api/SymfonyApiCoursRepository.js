@@ -199,6 +199,14 @@ export class SymfonyApiCoursRepository extends ICoursRepository {
     return this.requestJson("/api/admin/agent-cours/generations", { method: "POST", body: JSON.stringify(data) });
   }
 
+  async listerGenerations({ statuses = [], limit = 50 } = {}) {
+    const query = new URLSearchParams();
+    if (statuses.length) query.set("status", statuses.join(","));
+    query.set("limit", String(Math.min(100, Math.max(1, Number(limit) || 50))));
+    const data = await this.requestJson(`/api/admin/agent-cours/generations?${query.toString()}`);
+    return this.normalizeCollection(data);
+  }
+
   async voirGeneration(id) {
     return this.requestJson(`/api/admin/agent-cours/generations/${id}`);
   }

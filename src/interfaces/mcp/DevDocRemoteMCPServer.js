@@ -1,17 +1,15 @@
-import crypto from "node:crypto";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema
 } from "@modelcontextprotocol/sdk/types.js";
 
-const MAX_CORRECTIONS = 3;
-
 export class DevDocRemoteMCPServer {
   constructor(container) {
     this.repository = container.getCoursRepository();
     this.orchestration = container.getCourseOrchestrationService();
     this.listerCours = container.getListerCoursUseCase();
+    this.processor = container.getCourseGenerationProcessor();
   }
 
   createServer() {
@@ -32,6 +30,8 @@ export class DevDocRemoteMCPServer {
             return this.result(await this.createDraft(args));
           case "voir_brouillon_cours":
             return this.result(await this.getDraft(args));
+          case "reaffecter_brouillon_cours":
+            return this.result(await this.reassignDraft(args));
           case "publier_cours_devdoc":
             return this.result(await this.publishCourse(args));
           case "lister_cours_devdoc":
@@ -55,7 +55,7 @@ export class DevDocRemoteMCPServer {
         name: "creer_brouillon_cours",
         title: "Créer et vérifier un brouillon de cours DevDoc",
         description:
-          "Utilisez cet outil lorsqu’un utilisateur demande de créer un cours. Il génère le contenu, le vérifie et le corrige, puis conserve un brouillon. Il ne publie jamais le cours.",
+          "Utilisez cet outil lorsqu’un utilisateur demande de créer un cours. Il démarre une génération en arrière-plan et retourne immédiatement generationId. Consultez ensuite voir_brouillon_cours avec cet identifiant. Ne rédigez pas le cours vous-même et ne créez pas un second brouillon pendant le traitement. Il ne publie jamais le cours.",
         inputSchema: {
           type: "object",
           additionalProperties: false,
@@ -113,7 +113,7 @@ export class DevDocRemoteMCPServer {
         name: "voir_brouillon_cours",
         title: "Consulter un brouillon de cours",
         description:
-          "Utilisez cet outil pour consulter l’état, le rapport de vérification et un aperçu d’un brouillon avant de proposer sa publication.",
+          "Utilisez cet outil avec le generationId reçu lors de la création. Tant que processing vaut true, conservez le même identifiant et consultez de nouveau plus tard sans recréer ni improviser le cours.",
         inputSchema: {
           type: "object",
           additionalProperties: false,
@@ -132,6 +132,27 @@ export class DevDocRemoteMCPServer {
           destructiveHint: false,
           idempotentHint: true,
           openWorldHint: false
+        }
+      },
+      {
+        name: "reaffecter_brouillon_cours",
+        title: "Réaffecter un brouillon DevDoc",
+        description:
+          "Utilisez cet outil pour rattacher un brouillon non publié à un autre menu existant. Le menu doit appartenir à la même technologie et au même niveau que le brouillon.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            generationId: { type: "integer", minimum: 1 },
+            menuId: { type: "integer", minimum: 1 }
+          },
+          required: ["generationId", "menuId"]
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: true
         }
       },
       {
@@ -197,6 +218,10 @@ export class DevDocRemoteMCPServer {
     ];
   }
 
+  async resumePendingGenerations() {
+    return this.processor.resume();
+  }
+
   async createDraft(args) {
     this.validateDraftArgs(args);
     const payload = {
@@ -217,93 +242,76 @@ export class DevDocRemoteMCPServer {
       payload
     });
 
-    if (generation.courseId || (generation.candidate && generation.status !== "failed")) {
+    if (generation.courseId || generation.status === "succeeded") {
       return this.summarizeGeneration(generation, {
         reused: true,
-        message:
-          "Cette demande existait déjà. Le brouillon enregistré a été réutilisé."
+        message: "Cette demande est déjà publiée. Aucun doublon n’a été créé."
       });
     }
 
-    let candidate = null;
-    let report = null;
-
-    try {
-      await this.repository.mettreAJourGeneration(generation.id, {
-        status: "generating"
+    if (generation.status === "ready" || generation.verificationReport?.approved === true) {
+      return this.summarizeGeneration(generation, {
+        reused: true,
+        readyToPublish: true,
+        message: "Ce brouillon est déjà vérifié. Demandez une confirmation explicite avant publication."
       });
-
-      candidate = await this.orchestration.genererCandidat({
-        title: payload.title,
-        description: payload.description,
-        technology: payload.technology,
-        level: payload.level,
-        duration: payload.duration
-      });
-
-      for (let attempt = 0; attempt <= MAX_CORRECTIONS; attempt += 1) {
-        report = await this.orchestration.verifierCandidat({
-          candidate,
-          images: []
-        });
-
-        await this.repository.mettreAJourGeneration(generation.id, {
-          status: "verifying",
-          candidate,
-          verificationReport: report
-        });
-
-        if (report?.approved === true) {
-          const saved = await this.repository.voirGeneration(generation.id);
-          return this.summarizeGeneration(saved, {
-            readyToPublish: true,
-            message:
-              "Brouillon généré et vérifié. Demandez une confirmation explicite avant d’utiliser publier_cours_devdoc."
-          });
-        }
-
-        if (attempt === MAX_CORRECTIONS || !Array.isArray(report?.issues) || report.issues.length === 0) {
-          break;
-        }
-
-        candidate = await this.orchestration.corrigerCandidat({
-          candidate,
-          report,
-          technology: payload.technology,
-          level: payload.level
-        });
-      }
-
-      const failed = await this.repository.echouerGeneration(generation.id, {
-        verificationReport: report,
-        technicalError:
-          "Le brouillon n’a pas satisfait la vérification après trois corrections."
-      });
-      return this.summarizeGeneration(failed, {
-        readyToPublish: false,
-        message:
-          "Le brouillon a été conservé comme échec et ne peut pas être publié."
-      });
-    } catch (error) {
-      try {
-        await this.repository.echouerGeneration(generation.id, {
-          verificationReport: report,
-          technicalError:
-            error instanceof Error ? error.message : "Erreur de génération"
-        });
-      } catch {
-        // L’erreur initiale reste prioritaire.
-      }
-      throw error;
     }
+
+    const queued = this.processor.enqueue(generation);
+    return this.summarizeGeneration(generation, {
+      reused: !queued,
+      processing: true,
+      pollAfterSeconds: 15,
+      message: queued
+        ? "La génération a démarré en arrière-plan. Conservez generationId et consultez voir_brouillon_cours ; ne recréez pas le contenu dans la conversation."
+        : "Cette génération est déjà en cours. Consultez voir_brouillon_cours avec le même generationId ; ne lancez pas un autre brouillon."
+    });
   }
 
   async getDraft({ generationId, inclureHtml = false }) {
-    const generation = await this.repository.voirGeneration(
-      this.requirePositiveInteger(generationId, "generationId")
-    );
+    const id = this.requirePositiveInteger(generationId, "generationId");
+    const generation = await this.repository.voirGeneration(id);
+    const processing = ["pending", "generating", "verifying"].includes(generation.status);
     return this.summarizeGeneration(generation, {
-      includeHtml: inclureHtml === true
+      includeHtml: inclureHtml === true,
+      processing,
+      pollAfterSeconds: processing ? 15 : undefined,
+      message: processing
+        ? "Le serveur travaille encore. Réutilisez ce generationId dans voir_brouillon_cours ; ne générez pas un autre cours."
+        : generation.status === "ready"
+          ? "Le brouillon est vérifié et prêt. Une confirmation explicite est requise avant publication."
+          : generation.status === "failed"
+            ? "La génération a échoué. Relancez creer_brouillon_cours avec le même requestId pour réessayer sans créer de doublon."
+            : undefined
+    });
+  }
+
+  async reassignDraft({ generationId, menuId }) {
+    const id = this.requirePositiveInteger(generationId, "generationId");
+    const targetMenuId = this.requirePositiveInteger(menuId, "menuId");
+    const generation = await this.repository.voirGeneration(id);
+    if (generation.courseId) throw new Error("Un cours déjà publié ne peut pas être réaffecté par cet outil.");
+
+    const [menu, technology, level] = await Promise.all([
+      this.repository.trouverMenuParId(targetMenuId),
+      this.repository.trouverTechnologieParNom(generation.payload?.technology),
+      this.repository.trouverNiveauParNom(generation.payload?.level)
+    ]);
+    if (!technology || menu.categoryId !== technology.id) {
+      throw new Error("Le menu choisi n’appartient pas à la technologie du brouillon.");
+    }
+    if (!level || menu.niveauCoursId !== level.id) {
+      throw new Error("Le menu choisi n’appartient pas au niveau du brouillon.");
+    }
+
+    const payload = { ...generation.payload, menuId: targetMenuId };
+    delete payload.newMenuLabel;
+    const updated = await this.repository.mettreAJourGeneration(id, {
+      status: generation.verificationReport?.approved === true ? "ready" : generation.status,
+      payload
+    });
+    return this.summarizeGeneration(updated, {
+      message: "Le brouillon a été réaffecté au menu demandé."
     });
   }
 
@@ -348,7 +356,8 @@ export class DevDocRemoteMCPServer {
       this.listerCours.niveaux(),
       this.listerCours.menus()
     ]);
-    return { technologies, niveaux, menus };
+    const validMenus = menus.filter((menu) => menu.categoryId && menu.niveauCoursId);
+    return { technologies, niveaux, menus: validMenus, ignoredInvalidMenus: menus.length - validMenus.length };
   }
 
   summarizeGeneration(generation, options = {}) {
@@ -382,6 +391,8 @@ export class DevDocRemoteMCPServer {
           !generation?.courseId),
       published: options.published ?? Boolean(generation?.courseId),
       reused: options.reused ?? false,
+      processing: options.processing ?? false,
+      pollAfterSeconds: options.pollAfterSeconds,
       verificationAttempts: generation?.verificationAttempts,
       verificationReport: generation?.verificationReport || null,
       candidate,

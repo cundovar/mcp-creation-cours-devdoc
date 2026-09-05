@@ -28,6 +28,9 @@ function createSubject(overrides = {}) {
       verificationReport: { approved: true, issues: [] }
     })),
     echouerGeneration: vi.fn(),
+    trouverMenuParId: vi.fn(async () => ({ id: 92, categoryId: 28, niveauCoursId: 3 })),
+    trouverTechnologieParNom: vi.fn(async () => ({ id: 28, name: "typescript" })),
+    trouverNiveauParNom: vi.fn(async () => ({ id: 3, name: "newbie" })),
     finaliserGeneration: vi.fn(async () => ({
       ...generation,
       status: "succeeded",
@@ -53,21 +56,28 @@ function createSubject(overrides = {}) {
     coursIA: vi.fn(async () => []),
     ...overrides.listerCours
   };
+  const processor = {
+    enqueue: vi.fn(() => true),
+    resume: vi.fn(async () => 0),
+    ...overrides.processor
+  };
   const container = {
     getCoursRepository: () => repository,
     getCourseOrchestrationService: () => orchestration,
-    getListerCoursUseCase: () => listerCours
+    getListerCoursUseCase: () => listerCours,
+    getCourseGenerationProcessor: () => processor
   };
   return {
     subject: new DevDocRemoteMCPServer(container),
     repository,
-    orchestration
+    orchestration,
+    processor
   };
 }
 
 describe("DevDocRemoteMCPServer", () => {
-  it("crée, vérifie et conserve un brouillon sans le publier", async () => {
-    const { subject, repository, orchestration } = createSubject();
+  it("crée et met en file un brouillon sans bloquer la requête", async () => {
+    const { subject, repository, orchestration, processor } = createSubject();
 
     const result = await subject.createDraft({
       requestId: "chat-python-001",
@@ -83,10 +93,11 @@ describe("DevDocRemoteMCPServer", () => {
         externalId: "chat-python-001"
       })
     );
-    expect(orchestration.genererCandidat).toHaveBeenCalledOnce();
-    expect(orchestration.verifierCandidat).toHaveBeenCalledOnce();
+    expect(processor.enqueue).toHaveBeenCalledWith(expect.objectContaining({ id: 17 }));
+    expect(orchestration.genererCandidat).not.toHaveBeenCalled();
+    expect(orchestration.verifierCandidat).not.toHaveBeenCalled();
     expect(repository.finaliserGeneration).not.toHaveBeenCalled();
-    expect(result.readyToPublish).toBe(true);
+    expect(result.processing).toBe(true);
     expect(result.generationId).toBe(17);
   });
 
@@ -98,7 +109,7 @@ describe("DevDocRemoteMCPServer", () => {
       verificationReport: { approved: true },
       courseId: null
     };
-    const { subject, orchestration } = createSubject({
+    const { subject, orchestration, processor } = createSubject({
       repository: { creerGeneration: vi.fn(async () => existing) }
     });
 
@@ -111,6 +122,7 @@ describe("DevDocRemoteMCPServer", () => {
     });
 
     expect(orchestration.genererCandidat).not.toHaveBeenCalled();
+    expect(processor.enqueue).not.toHaveBeenCalled();
     expect(result.reused).toBe(true);
     expect(result.generationId).toBe(8);
   });
@@ -127,7 +139,7 @@ describe("DevDocRemoteMCPServer", () => {
       verificationReport: { approved: false },
       courseId: null
     };
-    const { subject, orchestration } = createSubject({
+    const { subject, orchestration, processor } = createSubject({
       repository: { creerGeneration: vi.fn(async () => failed) }
     });
 
@@ -139,8 +151,9 @@ describe("DevDocRemoteMCPServer", () => {
       duree: "1h"
     });
 
-    expect(orchestration.genererCandidat).toHaveBeenCalledOnce();
-    expect(result.readyToPublish).toBe(true);
+    expect(orchestration.genererCandidat).not.toHaveBeenCalled();
+    expect(processor.enqueue).toHaveBeenCalledWith(failed);
+    expect(result.processing).toBe(true);
   });
 
   it("refuse la publication sans confirmation explicite", async () => {
@@ -175,4 +188,42 @@ describe("DevDocRemoteMCPServer", () => {
     expect(draft.annotations.destructiveHint).toBe(false);
     expect(publish.annotations.destructiveHint).toBe(true);
   });
+  it("réaffecte un brouillon uniquement vers un menu compatible", async () => {
+    const { subject, repository } = createSubject({
+      repository: {
+        voirGeneration: vi.fn(async () => ({
+          id: 17,
+          status: "ready",
+          payload: { technology: "typescript", level: "newbie", newMenuLabel: "Ancien" },
+          verificationReport: { approved: true },
+          courseId: null
+        }))
+      }
+    });
+
+    await subject.reassignDraft({ generationId: 17, menuId: 92 });
+
+    expect(repository.mettreAJourGeneration).toHaveBeenCalledWith(17, {
+      status: "ready",
+      payload: { technology: "typescript", level: "newbie", menuId: 92 }
+    });
+  });
+
+  it("masque du catalogue les menus sans catégorie ou sans niveau", async () => {
+    const { subject } = createSubject({
+      listerCours: {
+        menus: vi.fn(async () => [
+          { id: 1, categoryId: 28, niveauCoursId: 3 },
+          { id: 2, categoryId: null, niveauCoursId: 3 },
+          { id: 3, categoryId: 28, niveauCoursId: null }
+        ])
+      }
+    });
+
+    const result = await subject.listCatalog();
+
+    expect(result.menus).toEqual([{ id: 1, categoryId: 28, niveauCoursId: 3 }]);
+    expect(result.ignoredInvalidMenus).toBe(2);
+  });
+
 });

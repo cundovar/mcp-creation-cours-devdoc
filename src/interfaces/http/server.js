@@ -21,6 +21,7 @@ export class HTTPServer {
     this.config = config;
     this.app = express();
     this.mcpTransports = new Map();
+    this.remoteMcp = new DevDocRemoteMCPServer(this.container);
 
     this.setupMiddleware();
     this.setupRoutes();
@@ -170,8 +171,7 @@ export class HTTPServer {
             }
           };
 
-          const remoteMcp = new DevDocRemoteMCPServer(this.container);
-          await remoteMcp.createServer().connect(transport);
+          await this.remoteMcp.createServer().connect(transport);
         }
 
         if (!transport) {
@@ -233,6 +233,13 @@ export class HTTPServer {
 
   async start() {
     const port = this.config.http.port || 3000;
+
+    try {
+      const resumed = await this.remoteMcp.resumePendingGenerations();
+      if (resumed > 0) console.log(`${resumed} generation(s) DevDoc reprise(s)`);
+    } catch (error) {
+      console.error("Impossible de reprendre les générations DevDoc:", error);
+    }
 
     return new Promise((resolve) => {
       this.server = this.app.listen(port, () => {

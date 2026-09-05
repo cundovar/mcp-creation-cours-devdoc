@@ -23,3 +23,26 @@ describe("SymfonyApiCoursRepository.lireMedia", () => {
     await expect(repository.lireMedia({ url: "https://evil.test/image.png" })).rejects.toThrow("non autorisée");
   });
 });
+
+describe("SymfonyApiCoursRepository.listerGenerations", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("transmet les statuts récupérables et la limite", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify([{ id: 1, status: "pending" }]),
+      { status: 200, headers: { "content-type": "application/json" } }
+    )));
+    const repository = new SymfonyApiCoursRepository({ baseUrl: "https://devdoc.test" });
+
+    const result = await repository.listerGenerations({
+      statuses: ["pending", "generating"],
+      limit: 20
+    });
+
+    expect(result).toEqual([{ id: 1, status: "pending" }]);
+    expect(fetch).toHaveBeenCalledWith(
+      "https://devdoc.test/api/admin/agent-cours/generations?status=pending%2Cgenerating&limit=20",
+      expect.any(Object)
+    );
+  });
+});
