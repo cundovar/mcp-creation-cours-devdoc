@@ -8,7 +8,7 @@ export class BridgeIAService extends IIAService {
     this.bridge = bridgeClient;
   }
 
-  async genererCours(specifications) {
+  async genererCandidat(specifications) {
     const data = await this.bridge.completeJson("course_creator", {
       sujet: specifications.sujet,
       technologie: specifications.technologie,
@@ -16,12 +16,13 @@ export class BridgeIAService extends IIAService {
       duree: specifications.duree
     });
 
-    return this.validerHTML(data?.html);
+    return this.validerCandidat(data);
   }
 
-  async ameliorerCours(codeActuel, commentaires, contexte) {
+  async corrigerCandidat(candidate, commentaires, contexte) {
     const data = await this.bridge.completeJson("course_corrector", {
-      html: codeActuel,
+      html: candidate?.codeHTML || candidate?.html || "",
+      objectives: this.objectifsEnTableau(candidate?.objectives),
       comments: commentaires,
       context: {
         titre: contexte?.titre,
@@ -31,6 +32,34 @@ export class BridgeIAService extends IIAService {
       }
     });
 
+    return this.validerCandidat(data);
+  }
+
+  async genererCours(specifications) {
+    const data = await this.bridge.completeJson("course_creator", {
+      sujet: specifications.sujet,
+      technologie: specifications.technologie,
+      niveau: specifications.niveau,
+      duree: specifications.duree
+    });
+    return this.validerHTML(data?.html);
+  }
+
+  async ameliorerCours(codeActuel, commentaires, contexte) {
+    const data = await this.bridge.completeJson("course_corrector", {
+      html: codeActuel,
+      objectives: [
+        "Maîtriser les notions techniques présentées",
+        "Appliquer les exemples et exercices du cours"
+      ],
+      comments: commentaires,
+      context: {
+        titre: contexte?.titre,
+        technologie: contexte?.technologie,
+        niveau: contexte?.niveau,
+        duree: contexte?.duree
+      }
+    });
     return this.validerHTML(data?.html);
   }
 
@@ -42,8 +71,7 @@ export class BridgeIAService extends IIAService {
       duree: specifications.duree
     });
 
-    const objectives = Array.isArray(data?.objectives) ? data.objectives : [];
-    return objectives.map((objectif) => `- ${objectif}`).join("\n");
+    return this.formaterObjectifs(data?.objectives);
   }
 
   async genererExercices() {
@@ -67,6 +95,28 @@ export class BridgeIAService extends IIAService {
       }))
       .filter((item) => item.prompt && item.altText)
       .slice(0, 3);
+  }
+
+  validerCandidat(data) {
+    const codeHTML = this.validerHTML(data?.html);
+    const objectives = this.formaterObjectifs(data?.objectives);
+    if (!objectives) throw new Error("Le candidat généré ne contient aucun objectif");
+    return { codeHTML, objectives };
+  }
+
+  formaterObjectifs(values) {
+    const objectives = Array.isArray(values)
+      ? values.map((value) => String(value || "").trim()).filter(Boolean)
+      : [];
+    return objectives.map((objective) => `- ${objective.replace(/^[-*]\s*/, "")}`).join("\n");
+  }
+
+  objectifsEnTableau(value) {
+    if (Array.isArray(value)) return value.map(String).map((item) => item.trim()).filter(Boolean);
+    return String(value || "")
+      .split(/\r?\n/)
+      .map((item) => item.replace(/^[-*]\s*/, "").trim())
+      .filter(Boolean);
   }
 
   validerHTML(html) {

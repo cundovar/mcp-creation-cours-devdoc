@@ -1,12 +1,14 @@
+import { HtmlCodeNormalizer } from "../services/HtmlCodeNormalizer.js";
 import { parseFragment, serialize } from "parse5";
 
 export class OrchestrerCours {
-  constructor(repository, iaService, imageService, verifier, validator) {
+  constructor(repository, iaService, imageService, verifier, validator, htmlCodeNormalizer = new HtmlCodeNormalizer()) {
     this.repository = repository;
     this.iaService = iaService;
     this.imageService = imageService;
     this.verifier = verifier;
     this.validator = validator;
+    this.htmlCodeNormalizer = htmlCodeNormalizer;
   }
 
   async preparerFormation({ superMenu, category, menus = [] }) {
@@ -44,7 +46,9 @@ export class OrchestrerCours {
 
   async genererCandidat({ title, description, technology, level, duration }) {
     const specifications = { sujet: title, technologie: technology, niveau: level, duree: duration };
-    const [codeHTML, objectives] = await Promise.all([this.iaService.genererCours(specifications), this.iaService.genererObjectifs(specifications)]);
+    const generated = await this.iaService.genererCandidat(specifications);
+    const codeHTML = this.htmlCodeNormalizer.normalize(generated.codeHTML);
+    const objectives = generated.objectives;
     return {
       title,
       description: description || `Cours ${title} généré automatiquement`,
@@ -90,8 +94,17 @@ export class OrchestrerCours {
   }
 
   async corrigerCandidat({ candidate, report, technology, level }) {
-    const codeHTML = await this.iaService.ameliorerCours(candidate.codeHTML, report.issues.map((issue) => issue.correction || issue.message).join("\n"), { titre: candidate.title, technologie: technology, niveau: level, duree: candidate.duration });
-    return { ...candidate, codeHTML, illustrations: [] };
+    const corrected = await this.iaService.corrigerCandidat(
+      candidate,
+      report.issues.map((issue) => issue.correction || issue.message).join("\n"),
+      { titre: candidate.title, technologie: technology, niveau: level, duree: candidate.duration }
+    );
+    return {
+      ...candidate,
+      codeHTML: this.htmlCodeNormalizer.normalize(corrected.codeHTML),
+      objectives: corrected.objectives,
+      illustrations: []
+    };
   }
 
   same(left, right) { return String(left || "").trim().toLocaleLowerCase("fr") === String(right || "").trim().toLocaleLowerCase("fr"); }

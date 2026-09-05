@@ -162,3 +162,40 @@ describe("BridgeIAService", () => {
     expect(requetes[0].payload.context.titre).toBe("Les hooks React");
   });
 });
+  it("génère le HTML et les objectifs avec un seul appel", async () => {
+    const html = '<main class="principal"><h1>React</h1></main>';
+    const { service, requetes } = await demarrerBridgeFactice(() => ({
+      ok: true,
+      data: { html, objectives: ["Comprendre les hooks", "Créer un hook"] }
+    }));
+
+    const resultat = await service.genererCandidat(specifications);
+
+    expect(resultat).toEqual({
+      codeHTML: html,
+      objectives: "- Comprendre les hooks\n- Créer un hook"
+    });
+    expect(requetes).toHaveLength(1);
+    expect(requetes[0].agent).toBe("course_creator");
+  });
+
+  it("corrige ensemble le HTML et les objectifs", async () => {
+    const html = '<main class="principal"><h1>React corrigé</h1></main>';
+    const { service, requetes } = await demarrerBridgeFactice(() => ({
+      ok: true,
+      data: { html, objectives: ["Comprendre useState", "Pratiquer useState"] }
+    }));
+
+    const resultat = await service.corrigerCandidat(
+      {
+        codeHTML: '<main class="principal"><h1>React</h1></main>',
+        objectives: "- Objectif ancien\n- Second objectif"
+      },
+      "Aligner les objectifs",
+      { titre: "React", technologie: "React", niveau: "Intermédiaire", duree: "2h" }
+    );
+
+    expect(resultat.objectives).toBe("- Comprendre useState\n- Pratiquer useState");
+    expect(requetes[0].payload.objectives).toEqual(["Objectif ancien", "Second objectif"]);
+    expect(requetes[0].payload.comments).toBe("Aligner les objectifs");
+  });

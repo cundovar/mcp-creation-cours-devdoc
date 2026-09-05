@@ -41,8 +41,10 @@ describe("OrchestrerCours", () => {
   it("génère un candidat sans appeler le planificateur d’illustrations", async () => {
     let plannerCalled = false;
     const iaService = {
-      genererCours: async () => '<main class="principal"><h1>Python</h1></main>',
-      genererObjectifs: async () => "- Comprendre Python",
+      genererCandidat: async () => ({
+        codeHTML: '<main class="principal"><h1>Python</h1></main>',
+        objectives: "- Comprendre Python"
+      }),
       genererPlanIllustrations: async () => {
         plannerCalled = true;
         return [{ prompt: "image" }];
