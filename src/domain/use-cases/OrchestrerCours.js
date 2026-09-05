@@ -51,7 +51,7 @@ export class OrchestrerCours {
     const objectives = generated.objectives;
     return {
       title,
-      description: description || `Cours ${title} généré automatiquement`,
+      description: generated.description || `Cours ${title} généré automatiquement`,
       codeHTML,
       objectives,
       duration,

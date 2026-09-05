@@ -101,7 +101,9 @@ export class BridgeIAService extends IIAService {
     const codeHTML = this.validerHTML(data?.html);
     const objectives = this.formaterObjectifs(data?.objectives);
     if (!objectives) throw new Error("Le candidat généré ne contient aucun objectif");
-    return { codeHTML, objectives };
+    const description = String(data?.description || "").trim();
+    if (description.length < 30) throw new Error("Le candidat généré ne contient pas une description publique exploitable");
+    return { codeHTML, objectives, description };
   }
 
   formaterObjectifs(values) {

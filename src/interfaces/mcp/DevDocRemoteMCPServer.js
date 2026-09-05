@@ -333,7 +333,7 @@ export class DevDocRemoteMCPServer {
     this.validateDraftArgs(args);
     const payload = {
       title: args.titre.trim(),
-      description: String(args.description || "").trim(),
+      brief: String(args.description || "").trim(),
       technology: args.technologie.trim(),
       level: args.niveau.trim(),
       duration: args.duree.trim(),
