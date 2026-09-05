@@ -13,7 +13,8 @@ export class BridgeIAService extends IIAService {
       sujet: specifications.sujet,
       technologie: specifications.technologie,
       niveau: specifications.niveau,
-      duree: specifications.duree
+      duree: specifications.duree,
+      brief: specifications.brief || ""
     });
 
     return this.validerCandidat(data);

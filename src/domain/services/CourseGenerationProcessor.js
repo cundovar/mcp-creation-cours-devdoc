@@ -44,7 +44,7 @@ export class CourseGenerationProcessor {
       await this.repository.mettreAJourGeneration(generationId, { status: "generating" });
       candidate = await this.orchestration.genererCandidat({
         title: payload.title,
-        description: payload.description,
+        description: payload.brief || payload.description,
         technology: payload.technology,
         level: payload.level,
         duration: payload.duration

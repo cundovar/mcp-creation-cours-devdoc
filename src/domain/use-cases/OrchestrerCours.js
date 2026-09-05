@@ -45,7 +45,7 @@ export class OrchestrerCours {
   }
 
   async genererCandidat({ title, description, technology, level, duration }) {
-    const specifications = { sujet: title, technologie: technology, niveau: level, duree: duration };
+    const specifications = { sujet: title, brief: description || "", technologie: technology, niveau: level, duree: duration };
     const generated = await this.iaService.genererCandidat(specifications);
     const codeHTML = this.htmlCodeNormalizer.normalize(generated.codeHTML);
     const objectives = generated.objectives;
