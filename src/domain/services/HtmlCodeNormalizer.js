@@ -1,11 +1,17 @@
 const CODE_BLOCK = /(<code\b[^>]*>)([\s\S]*?)(<\/code\s*>)/gi;
+const ORDERED_LIST_TYPE_ATTRIBUTE = /(<ol\b[^>]*?)\s+type\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)([^>]*>)/gi;
 
 export class HtmlCodeNormalizer {
   normalize(html) {
-    return String(html || "").replace(CODE_BLOCK, (_match, opening, source, closing) => {
+    const normalizedCode = String(html || "").replace(CODE_BLOCK, (_match, opening, source, closing) => {
       const decoded = this.decodeEntities(source);
       return `${opening}${this.escapeCode(decoded)}${closing}`;
     });
+
+    return normalizedCode.replace(
+      ORDERED_LIST_TYPE_ATTRIBUTE,
+      (_match, before, after) => `${before}${after}`
+    );
   }
 
   decodeEntities(value) {

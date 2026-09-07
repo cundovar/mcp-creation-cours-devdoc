@@ -17,6 +17,22 @@ describe("HtmlCodeNormalizer", () => {
     );
   });
 
+  it.each([
+    ['<ol type="a"><li>Étape</li></ol>', "<ol><li>Étape</li></ol>"],
+    ["<ol class=\"steps\" type='I' start=\"3\"><li>Étape</li></ol>", '<ol class="steps" start="3"><li>Étape</li></ol>'],
+    ["<OL TYPE=A><li>Étape</li></OL>", "<OL><li>Étape</li></OL>"]
+  ])("retire l’attribut type des listes ordonnées avant validation", (source, expected) => {
+    const html = `<main class="principal">${source}</main>`;
+    expect(new HtmlCodeNormalizer().normalize(html)).toBe(
+      `<main class="principal">${expected}</main>`
+    );
+  });
+
+  it("conserve un exemple ol type placé dans une balise code", () => {
+    const html = '<main class="principal"><pre><code>&lt;ol type="a"&gt;</code></pre></main>';
+    expect(new HtmlCodeNormalizer().normalize(html)).toBe(html);
+  });
+
   it("ne modifie pas le HTML situé hors des balises code", () => {
     const html = '<main class="principal"><h1>Titre</h1><p>Texte</p></main>';
     expect(new HtmlCodeNormalizer().normalize(html)).toBe(html);
