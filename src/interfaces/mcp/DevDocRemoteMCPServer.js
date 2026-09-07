@@ -425,7 +425,7 @@ export class DevDocRemoteMCPServer {
     if (!technology || menu.categoryId !== technology.id) {
       throw new Error("Le menu choisi n’appartient pas à la technologie du brouillon.");
     }
-    if (!level || menu.niveauCoursId !== level.id) {
+    if (level && menu.niveauCoursId && menu.niveauCoursId !== level.id) {
       throw new Error("Le menu choisi n’appartient pas au niveau du brouillon.");
     }
 
