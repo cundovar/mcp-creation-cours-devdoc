@@ -425,7 +425,7 @@ export class DevDocRemoteMCPServer {
     if (!technology || menu.categoryId !== technology.id) {
       throw new Error("Le menu choisi n’appartient pas à la technologie du brouillon.");
     }
-    if (!level || menu.niveauCoursId !== level.id) {
+    if (level && menu.niveauCoursId && menu.niveauCoursId !== level.id) {
       throw new Error("Le menu choisi n’appartient pas au niveau du brouillon.");
     }
 
@@ -481,8 +481,8 @@ export class DevDocRemoteMCPServer {
       this.listerCours.niveaux(),
       this.listerCours.menus()
     ]);
-    const validMenus = menus.filter((menu) => menu.categoryId && menu.niveauCoursId);
-    return { technologies, niveaux, menus: validMenus, ignoredInvalidMenus: menus.length - validMenus.length };
+    const validMenus = menus.filter((menu) => menu.categoryId);
+    return { technologies, niveaux, menus: validMenus, ignoredMenusSansCategorie: menus.length - validMenus.length };
   }
 
   summarizeGeneration(generation, options = {}) {
