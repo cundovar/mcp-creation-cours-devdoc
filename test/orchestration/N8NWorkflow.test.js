@@ -17,6 +17,33 @@ describe("workflow n8n DevDoc", () => {
     ]);
   });
 
+
+  it("prépare l’arborescence avant de développer les cours", () => {
+    expect(workflow.connections["Validate Formation Batch"].main[0]).toEqual([
+      { node: "Prepare Formation", type: "main", index: 0 }
+    ]);
+    expect(workflow.connections["Prepare Formation"].main[0]).toEqual([
+      { node: "Expand Courses", type: "main", index: 0 }
+    ]);
+    expect(workflow.connections["Expand Courses"].main[0]).toEqual([
+      { node: "Loop Over Courses", type: "main", index: 0 }
+    ]);
+  });
+
+  it("utilise un credential n8n sortant sans expression de variable d’environnement", () => {
+    expect(JSON.stringify(workflow)).not.toContain("$env.");
+    const outbound = workflow.nodes.filter(
+      (node) => node.type === "n8n-nodes-base.httpRequest"
+    );
+    for (const node of outbound) {
+      expect(node.parameters.authentication).toBe("genericCredentialType");
+      expect(node.parameters.genericAuthType).toBe("httpHeaderAuth");
+      expect(node.credentials.httpHeaderAuth.id).toBe(
+        "devdoc-mcp-orchestration-header-auth"
+      );
+    }
+  });
+
   it("conserve un brouillon prêt sans publication automatique", () => {
     expect(workflow.nodes.some((node) => node.name === "Finalize Visible Course")).toBe(false);
     expect(JSON.stringify(workflow)).not.toContain("/finaliser");

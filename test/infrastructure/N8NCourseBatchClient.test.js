@@ -20,12 +20,18 @@ describe("N8NCourseBatchClient", () => {
       timeoutMs: 1000
     });
 
-    await expect(client.enqueue([20, 21, 20])).resolves.toEqual({ accepted: 2 });
+    const batch = {
+      batchId: "batch-test-001",
+      superMenu: "DevOps",
+      category: "CI/CD",
+      menus: [{ name: "Junior", level: "Junior", generationIds: [20, 21, 20] }]
+    };
+    await expect(client.enqueue(batch)).resolves.toEqual({ accepted: 2 });
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, options] = fetchMock.mock.calls[0];
     expect(url).toBe("http://n8n:5678/webhook/devdoc-course-batch");
     expect(options.headers["X-DevDoc-Workflow-Token"]).toBe("secret");
-    expect(JSON.parse(options.body)).toEqual({ generationIds: [20, 21] });
+    expect(JSON.parse(options.body)).toEqual(batch);
   });
 
   it("remonte les refus du webhook sans exposer le jeton", async () => {
@@ -40,8 +46,11 @@ describe("N8NCourseBatchClient", () => {
       token: "secret"
     });
 
-    await expect(client.enqueue([20])).rejects.toThrow(
-      "n8n course batch 403"
-    );
+    await expect(client.enqueue({
+      batchId: "batch-test-002",
+      superMenu: "DevOps",
+      category: "CI/CD",
+      menus: [{ name: "Junior", level: "Junior", generationIds: [20] }]
+    })).rejects.toThrow("n8n course batch 403");
   });
 });

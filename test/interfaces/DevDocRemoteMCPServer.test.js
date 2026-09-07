@@ -29,8 +29,8 @@ function createSubject(overrides = {}) {
     })),
     echouerGeneration: vi.fn(),
     trouverTechnologieParNom: vi.fn(async () => ({ id: 28, name: "typescript" })),
-    trouverMenuParId: vi.fn(async () => ({ id: 92, categoryId: 28, niveauCoursId: 3 })),
-    trouverTechnologieParNom: vi.fn(async () => ({ id: 28, name: "typescript" })),
+    listerCategories: vi.fn(async () => [{ id: 28, name: "Python", superMenu: { id: 4, name: "Développement" } }]),
+    trouverMenuParId: vi.fn(async () => ({ id: 92, label: "Python", categoryId: 28, niveauCoursId: 3, positionMenusName: "menu-gauche" })),
     trouverNiveauParNom: vi.fn(async () => ({ id: 3, name: "newbie" })),
     finaliserGeneration: vi.fn(async () => ({
       ...generation,
@@ -59,7 +59,9 @@ function createSubject(overrides = {}) {
     ...overrides.listerCours
   };
   const n8nCourseBatch = {
-    enqueue: vi.fn(async (generationIds) => ({ accepted: generationIds.length })),
+    enqueue: vi.fn(async (batch) => ({
+      accepted: batch.menus.flatMap((menu) => menu.generationIds).length
+    })),
     ...overrides.n8nCourseBatch
   };
   const container = {
@@ -95,7 +97,17 @@ describe("DevDocRemoteMCPServer", () => {
       })
     );
     expect(repository.mettreAJourGeneration).toHaveBeenCalledWith(17, { status: "queued" });
-    expect(n8nCourseBatch.enqueue).toHaveBeenCalledWith([17]);
+    expect(n8nCourseBatch.enqueue).toHaveBeenCalledWith({
+      batchId: "mcp-devdoc",
+      superMenu: "Développement",
+      category: "Python",
+      menus: [{
+        name: "Découvrir Python",
+        level: "Débutant",
+        position: "menu-gauche",
+        generationIds: [17]
+      }]
+    });
     expect(orchestration.genererCandidat).not.toHaveBeenCalled();
     expect(orchestration.verifierCandidat).not.toHaveBeenCalled();
     expect(repository.finaliserGeneration).not.toHaveBeenCalled();
@@ -154,7 +166,11 @@ describe("DevDocRemoteMCPServer", () => {
     });
 
     expect(orchestration.genererCandidat).not.toHaveBeenCalled();
-    expect(n8nCourseBatch.enqueue).toHaveBeenCalledWith([8]);
+    expect(n8nCourseBatch.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        menus: [expect.objectContaining({ generationIds: [8] })]
+      })
+    );
     expect(result.processing).toBe(true);
   });
 
@@ -174,17 +190,65 @@ describe("DevDocRemoteMCPServer", () => {
 
     const result = await subject.createDraftBatch({
       batchId: "batch-python-001",
-      cours: [
-        { requestId: "course-python-1", titre: "Python 1", technologie: "Python", niveau: "junior", duree: "1h" },
-        { requestId: "course-python-2", titre: "Python 2", technologie: "Python", niveau: "junior", duree: "1h" }
-      ]
+      superMenu: "Développement",
+      categorie: "Python",
+      confirmation: true,
+      menus: [{
+        nom: "Python junior",
+        niveau: "junior",
+        position: "menu-gauche",
+        cours: [
+          { requestId: "course-python-1", titre: "Python 1", duree: "1h" },
+          { requestId: "course-python-2", titre: "Python 2", duree: "1h" }
+        ]
+      }]
     });
 
     expect(n8nCourseBatch.enqueue).toHaveBeenCalledOnce();
-    expect(n8nCourseBatch.enqueue).toHaveBeenCalledWith([17, 18]);
+    expect(n8nCourseBatch.enqueue).toHaveBeenCalledWith({
+      batchId: "batch-python-001",
+      superMenu: "Développement",
+      category: "Python",
+      menus: [{
+        name: "Python junior",
+        level: "junior",
+        position: "menu-gauche",
+        generationIds: [17, 18]
+      }]
+    });
     expect(repository.mettreAJourGeneration).toHaveBeenCalledWith(17, { status: "queued" });
     expect(repository.mettreAJourGeneration).toHaveBeenCalledWith(18, { status: "queued" });
     expect(result.count).toBe(2);
+  });
+
+  it("prévisualise un lot sans écrire ni appeler n8n", async () => {
+    const { subject, repository, n8nCourseBatch } = createSubject();
+
+    const result = await subject.createDraftBatch({
+      batchId: "batch-devops-preview",
+      superMenu: "DevOps",
+      categorie: "CI/CD",
+      confirmation: false,
+      menus: [{
+        nom: "Junior",
+        niveau: "Junior",
+        cours: [{ requestId: "devops-course-001", titre: "Comprendre la CI/CD", duree: "2h" }]
+      }]
+    });
+
+    expect(result.requiresConfirmation).toBe(true);
+    expect(result.count).toBe(1);
+    expect(repository.creerGeneration).not.toHaveBeenCalled();
+    expect(n8nCourseBatch.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("décrit les capacités et impose deux confirmations distinctes", () => {
+    const { subject } = createSubject();
+    const capabilities = subject.describeCapabilities();
+
+    expect(capabilities.architecture.n8n).toContain("un par un");
+    expect(capabilities.safeguards).toContain("aucune publication automatique");
+    expect(capabilities.recommendedFlow.at(-1)).toContain("confirmation explicite");
   });
 
   it("refuse la publication sans confirmation explicite", async () => {

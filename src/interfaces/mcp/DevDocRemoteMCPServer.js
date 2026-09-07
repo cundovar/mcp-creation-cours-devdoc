@@ -26,6 +26,8 @@ export class DevDocRemoteMCPServer {
       const { name, arguments: args = {} } = request.params;
       try {
         switch (name) {
+          case "decrire_capacites_devdoc":
+            return this.result(this.describeCapabilities());
           case "creer_brouillon_cours":
             return this.result(await this.createDraft(args));
           case "creer_lot_brouillons_cours":
@@ -55,6 +57,19 @@ export class DevDocRemoteMCPServer {
 
   toolDefinitions() {
     return [
+      {
+        name: "decrire_capacites_devdoc",
+        title: "Décrire les capacités et le parcours DevDoc",
+        description:
+          "Appelez cet outil avant toute demande complexe. Il décrit précisément ce qui peut être créé, les confirmations requises et le rôle de n8n.",
+        inputSchema: { type: "object", additionalProperties: false, properties: {} },
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false
+        }
+      },
       {
         name: "creer_brouillon_cours",
         title: "Créer et vérifier un brouillon de cours DevDoc",
@@ -115,20 +130,21 @@ export class DevDocRemoteMCPServer {
       },
       {
         name: "creer_lot_brouillons_cours",
-        title: "Créer et vérifier un lot de brouillons DevDoc via n8n",
+        title: "Préparer ou lancer une formation DevDoc complète via n8n",
         description:
-          "Utilisez cet outil pour créer plusieurs cours. Le lot est transmis en une seule fois à n8n, qui traite les générations séquentiellement, les vérifie et conserve des brouillons non publiés.",
+          "Transforme une demande simple en arborescence supermenu → catégorie → menus → cours. Appelez d’abord avec confirmation=false pour présenter le plan. Après confirmation explicite, rappelez avec confirmation=true : n8n crée l’arborescence et traite les brouillons séquentiellement sans les publier.",
         inputSchema: {
           type: "object",
           additionalProperties: false,
           properties: {
-            batchId: {
-              type: "string",
-              minLength: 8,
-              maxLength: 100,
-              pattern: "^[A-Za-z0-9._:-]+$"
+            batchId: { type: "string", minLength: 8, maxLength: 100, pattern: "^[A-Za-z0-9._:-]+$" },
+            superMenu: { type: "string", minLength: 2, maxLength: 100 },
+            categorie: { type: "string", minLength: 1, maxLength: 100 },
+            confirmation: {
+              type: "boolean",
+              description: "Doit rester false pour la proposition, puis être true après validation explicite de l’utilisateur."
             },
-            cours: {
+            menus: {
               type: "array",
               minItems: 1,
               maxItems: 20,
@@ -136,20 +152,31 @@ export class DevDocRemoteMCPServer {
                 type: "object",
                 additionalProperties: false,
                 properties: {
-                  requestId: { type: "string", minLength: 8, maxLength: 100, pattern: "^[A-Za-z0-9._:-]+$" },
-                  titre: { type: "string", minLength: 3, maxLength: 180 },
-                  description: { type: "string", maxLength: 2000 },
-                  technologie: { type: "string", minLength: 1, maxLength: 100 },
+                  nom: { type: "string", minLength: 1, maxLength: 150 },
                   niveau: { type: "string", minLength: 1, maxLength: 100 },
-                  duree: { type: "string", minLength: 1, maxLength: 100 },
-                  menuId: { type: "integer", minimum: 1 },
-                  nouveauMenuLabel: { type: "string", minLength: 1, maxLength: 150 }
+                  position: { type: "string", minLength: 1, maxLength: 100 },
+                  cours: {
+                    type: "array",
+                    minItems: 1,
+                    maxItems: 20,
+                    items: {
+                      type: "object",
+                      additionalProperties: false,
+                      properties: {
+                        requestId: { type: "string", minLength: 8, maxLength: 100, pattern: "^[A-Za-z0-9._:-]+$" },
+                        titre: { type: "string", minLength: 3, maxLength: 180 },
+                        description: { type: "string", maxLength: 2000 },
+                        duree: { type: "string", minLength: 1, maxLength: 100 }
+                      },
+                      required: ["requestId", "titre", "duree"]
+                    }
+                  }
                 },
-                required: ["requestId", "titre", "technologie", "niveau", "duree"]
+                required: ["nom", "niveau", "cours"]
               }
             }
           },
-          required: ["batchId", "cours"]
+          required: ["batchId", "superMenu", "categorie", "menus", "confirmation"]
         },
         annotations: {
           readOnlyHint: false,
@@ -318,13 +345,41 @@ export class DevDocRemoteMCPServer {
   }
 
   async resumePendingGenerations() {
-    const generations = await this.repository.listerGenerations({
-      statuses: ["pending"],
-      limit: 100
-    });
-    if (!generations.length) return 0;
-    await this.queueWithN8N(generations);
-    return generations.length;
+    // n8n owns durable execution and retries. A pending generation does not
+    // contain enough context to recreate a whole formation safely at startup.
+    return 0;
+  }
+
+  describeCapabilities() {
+    return {
+      version: 2,
+      architecture: {
+        mcp: "Comprend la demande, propose un plan, attend la confirmation et enregistre les générations.",
+        n8n: "Crée ou réutilise le supermenu, la catégorie et les menus, puis génère et vérifie les cours un par un.",
+        devdoc: "Conserve les brouillons vérifiés et publie uniquement après une confirmation séparée."
+      },
+      can: [
+        "lister le catalogue, les niveaux et les menus",
+        "proposer une formation sans modifier DevDoc",
+        "créer ou réutiliser un supermenu, une catégorie et plusieurs menus",
+        "générer et vérifier un ou plusieurs brouillons via n8n",
+        "consulter, réaffecter et publier un brouillon vérifié"
+      ],
+      safeguards: [
+        "confirmation explicite avant de créer l’arborescence ou les générations d’un lot",
+        "traitement séquentiel des cours dans n8n",
+        "aucune publication automatique",
+        "confirmation explicite et distincte pour chaque publication"
+      ],
+      recommendedFlow: [
+        "Appeler lister_catalogue_devdoc si le classement existant est utile.",
+        "Construire le plan pédagogique et appeler creer_lot_brouillons_cours avec confirmation=false.",
+        "Présenter le plan et attendre l’accord explicite de l’utilisateur.",
+        "Rappeler exactement le même lot avec confirmation=true.",
+        "Suivre les generationId avec voir_brouillon_cours.",
+        "Ne publier qu’après une nouvelle confirmation explicite."
+      ]
+    };
   }
 
   async preparePlacement({ superMenu, category, menus = [], confirmation = false }) {
@@ -414,10 +469,16 @@ export class DevDocRemoteMCPServer {
       }
     }
 
+    const plan = await this.buildSingleCoursePlan(args, payload);
     const generation = await this.repository.creerGeneration({
       batchId: "mcp-devdoc",
       externalId: args.requestId,
-      payload
+      payload: {
+        ...payload,
+        superMenu: plan.superMenu,
+        menuName: plan.menus[0].name,
+        menuPosition: plan.menus[0].position
+      }
     });
 
     if (generation.courseId || generation.status === "succeeded") {
@@ -444,7 +505,10 @@ export class DevDocRemoteMCPServer {
       });
     }
 
-    await this.queueWithN8N([generation]);
+    await this.queueWithN8N([generation], {
+      ...plan,
+      menus: [{ ...plan.menus[0], generationIds: [Number(generation.id)] }]
+    });
     return this.summarizeGeneration(generation, {
       reused: false,
       processing: true,
@@ -453,47 +517,116 @@ export class DevDocRemoteMCPServer {
     });
   }
 
-  async createDraftBatch({ batchId, cours }) {
+  async createDraftBatch({ batchId, superMenu, categorie, menus, confirmation = false }) {
     if (!/^[A-Za-z0-9._:-]{8,100}$/.test(String(batchId || ""))) {
       throw new Error("batchId invalide");
     }
-    if (!Array.isArray(cours) || cours.length < 1 || cours.length > 20) {
-      throw new Error("Le lot doit contenir entre 1 et 20 cours");
+    if (typeof superMenu !== "string" || !superMenu.trim()) throw new Error("superMenu est requis");
+    if (typeof categorie !== "string" || !categorie.trim()) throw new Error("categorie est requise");
+    if (!Array.isArray(menus) || menus.length < 1 || menus.length > 20) {
+      throw new Error("Le lot doit contenir entre 1 et 20 menus");
+    }
+
+    const normalizedMenus = menus.map((menu) => {
+      if (!menu || typeof menu.nom !== "string" || !menu.nom.trim()) throw new Error("Chaque menu doit avoir un nom");
+      if (typeof menu.niveau !== "string" || !menu.niveau.trim()) throw new Error("Chaque menu doit avoir un niveau");
+      if (!Array.isArray(menu.cours) || menu.cours.length < 1 || menu.cours.length > 20) {
+        throw new Error("Chaque menu doit contenir entre 1 et 20 cours");
+      }
+      return {
+        name: menu.nom.trim(),
+        level: menu.niveau.trim(),
+        position: String(menu.position || "menu-gauche").trim(),
+        courses: menu.cours.map((course) => ({
+          requestId: course.requestId,
+          title: typeof course.titre === "string" ? course.titre.trim() : course.titre,
+          brief: String(course.description || "").trim(),
+          duration: typeof course.duree === "string" ? course.duree.trim() : course.duree
+        }))
+      };
+    });
+    const courses = normalizedMenus.flatMap((menu) => menu.courses);
+    if (courses.length > 50) throw new Error("Le lot doit contenir au plus 50 cours");
+    for (const course of courses) {
+      this.validateDraftArgs({
+        requestId: course.requestId,
+        titre: course.title,
+        technologie: categorie,
+        niveau: "défini par le menu",
+        duree: course.duration
+      });
+    }
+    const requestIds = courses.map((course) => course.requestId);
+    if (new Set(requestIds).size !== requestIds.length) {
+      throw new Error("Chaque requestId du lot doit être unique");
+    }
+
+    const preview = {
+      batchId,
+      superMenu: superMenu.trim(),
+      category: categorie.trim(),
+      menus: normalizedMenus.map((menu) => ({
+        name: menu.name,
+        level: menu.level,
+        position: menu.position,
+        courses: menu.courses
+      }))
+    };
+    if (confirmation !== true) {
+      return {
+        requiresConfirmation: true,
+        confirmationRequired: true,
+        count: courses.length,
+        plan: preview,
+        message: "Aucune donnée n’a été créée. Présentez ce plan puis rappelez le même lot avec confirmation=true après l’accord explicite de l’utilisateur."
+      };
     }
 
     const generations = [];
-    for (const args of cours) {
-      this.validateDraftArgs(args);
-      const technology = await this.repository.trouverTechnologieParNom(
-        args.technologie
-      );
-      if (!technology) {
-        throw new Error(`Technologie DevDoc inconnue: ${args.technologie}`);
-      }
-      const payload = {
-        title: args.titre.trim(),
-        brief: String(args.description || "").trim(),
-        technology: args.technologie.trim(),
-        level: args.niveau.trim(),
-        duration: args.duree.trim(),
-        ...(args.menuId ? { menuId: Number(args.menuId) } : {}),
-        ...(args.nouveauMenuLabel
-          ? { newMenuLabel: args.nouveauMenuLabel.trim() }
-          : {})
-      };
-      generations.push(
-        await this.repository.creerGeneration({
+    const generationMenus = [];
+    for (const menu of normalizedMenus) {
+      const generationIds = [];
+      for (const course of menu.courses) {
+        const generation = await this.repository.creerGeneration({
           batchId,
-          externalId: args.requestId,
-          payload
-        })
-      );
+          externalId: course.requestId,
+          payload: {
+            title: course.title,
+            brief: course.brief,
+            technology: categorie.trim(),
+            level: menu.level,
+            duration: course.duration,
+            superMenu: superMenu.trim(),
+            menuName: menu.name,
+            menuPosition: menu.position
+          }
+        });
+        generations.push(generation);
+        if (["pending", "failed"].includes(generation.status)) {
+          generationIds.push(Number(generation.id));
+        }
+      }
+      if (generationIds.length) {
+        generationMenus.push({
+          name: menu.name,
+          level: menu.level,
+          position: menu.position,
+          generationIds
+        });
+      }
     }
 
     const dispatchable = generations.filter((generation) =>
       ["pending", "failed"].includes(generation.status)
     );
-    if (dispatchable.length) await this.queueWithN8N(dispatchable);
+    if (dispatchable.length) {
+      await this.queueWithN8N(dispatchable, {
+        batchId,
+        superMenu: superMenu.trim(),
+        category: categorie.trim(),
+        menus: generationMenus
+      });
+    }
 
     return {
       batchId,
@@ -516,7 +649,7 @@ export class DevDocRemoteMCPServer {
     };
   }
 
-  async queueWithN8N(generations) {
+  async queueWithN8N(generations, plan) {
     const ids = generations.map((generation) => Number(generation.id));
     await Promise.all(
       ids.map((id) =>
@@ -524,7 +657,7 @@ export class DevDocRemoteMCPServer {
       )
     );
     try {
-      await this.n8nCourseBatch.enqueue(ids);
+      await this.n8nCourseBatch.enqueue(plan);
     } catch (error) {
       await Promise.allSettled(
         ids.map((id) =>
@@ -533,6 +666,30 @@ export class DevDocRemoteMCPServer {
       );
       throw error;
     }
+  }
+
+  async buildSingleCoursePlan(args, payload) {
+    const categories = await this.repository.listerCategories();
+    const category = categories.find((item) => this.same(item.name, payload.technology));
+    if (!category) throw new Error(`Technologie DevDoc inconnue: ${payload.technology}`);
+    const superMenu = category.superMenu?.name;
+    if (!superMenu) throw new Error(`La catégorie ${payload.technology} n’est rattachée à aucun supermenu`);
+    const menu = args.menuId
+      ? await this.repository.trouverMenuParId(Number(args.menuId))
+      : null;
+    if (menu && menu.categoryId !== category.id) {
+      throw new Error("Le menu choisi n’appartient pas à la technologie demandée");
+    }
+    return {
+      batchId: "mcp-devdoc",
+      superMenu,
+      category: payload.technology,
+      menus: [{
+        name: menu?.label || String(args.nouveauMenuLabel || payload.title).trim(),
+        level: payload.level,
+        position: menu?.positionMenusName || "menu-gauche"
+      }]
+    };
   }
 
   async getDraft({ generationId, inclureHtml = false }) {

@@ -44,9 +44,9 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $json.body ?? $json;\nconst source = Array.isArray(input.generationIds)\n  ? input.generationIds\n  : [input.generationId];\nconst generationIds = [...new Set(source.map(Number))]\n  .filter((id) => Number.isInteger(id) && id > 0);\nif (!generationIds.length) throw new Error('generationIds is required');\nif (generationIds.length > 100) throw new Error('A batch cannot exceed 100 generations');\nreturn generationIds.map((generationId) => ({ json: { generationId } }));"
+        "jsCode": "const input = $json.body ?? $json;\nconst batchId = String(input.batchId || '').trim();\nconst superMenu = String(input.superMenu || '').trim();\nconst category = String(input.category || '').trim();\nif (!/^[A-Za-z0-9._:-]{8,100}$/.test(batchId)) throw new Error('batchId is invalid');\nif (!superMenu) throw new Error('superMenu is required');\nif (!category) throw new Error('category is required');\nif (!Array.isArray(input.menus) || input.menus.length < 1 || input.menus.length > 20) {\n  throw new Error('menus must contain between 1 and 20 entries');\n}\nconst seen = new Set();\nlet count = 0;\nconst menus = input.menus.map((menu) => {\n  const name = String(menu.name || '').trim();\n  const level = String(menu.level || '').trim();\n  const position = String(menu.position || 'menu-gauche').trim();\n  if (!name || !level) throw new Error('Each menu needs name and level');\n  const generationIds = [...new Set((menu.generationIds || []).map(Number))]\n    .filter((id) => Number.isInteger(id) && id > 0);\n  if (!generationIds.length) throw new Error('Each menu needs generationIds');\n  for (const id of generationIds) {\n    if (seen.has(id)) throw new Error('generationIds must be unique across the batch');\n    seen.add(id);\n    count += 1;\n  }\n  return { name, level, position, generationIds };\n});\nif (count > 50) throw new Error('A batch cannot exceed 50 generations');\nreturn [{ json: { batchId, superMenu, category, menus } }];"
       },
-      "name": "Validate Generation Batch",
+      "name": "Validate Formation Batch",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -57,6 +57,50 @@
     },
     {
       "parameters": {
+        "method": "POST",
+        "url": "https://jxhg08kzgzoooyy1igvuzlxs.152.53.114.87.sslip.io/api/orchestration/formations/preparer",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ superMenu: $json.superMenu, category: $json.category, menus: $json.menus.map(({ name, level, position }) => ({ name, level, position })) }) }}",
+        "options": {
+          "timeout": 330000
+        }
+      },
+      "id": "devdoc-prepare-formation",
+      "name": "Prepare Formation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -800,
+        80
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 15000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "devdoc-mcp-orchestration-header-auth",
+          "name": "DevDoc MCP Orchestration API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const request = $('Validate Formation Batch').first().json;\nconst preparedMenus = $json.data?.menus || [];\nif (preparedMenus.length !== request.menus.length) {\n  throw new Error('Prepared menu count does not match requested menu count');\n}\nreturn request.menus.flatMap((menu, index) => {\n  const menuId = Number(preparedMenus[index]?.id);\n  if (!Number.isInteger(menuId) || menuId < 1) throw new Error('Prepared menu id is missing');\n  return menu.generationIds.map((generationId) => ({\n    json: { generationId, menuId },\n    pairedItem: { item: 0 }\n  }));\n});"
+      },
+      "id": "devdoc-expand-courses",
+      "name": "Expand Courses",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -580,
+        80
+      ]
+    },
+    {
+      "parameters": {
         "batchSize": 1,
         "options": {}
       },
@@ -64,7 +108,7 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        -800,
+        -360,
         80
       ],
       "id": "devdoc-0004"
@@ -72,35 +116,30 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $env.DEVDOC_MCP_URL + '/api/orchestration/generations/' + $json.generationId }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "={{ 'Bearer ' + $env.DEVDOC_MCP_TOKEN }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
+        "url": "={{ 'https://jxhg08kzgzoooyy1igvuzlxs.152.53.114.87.sslip.io/api/orchestration/generations/' + $json.generationId }}",
         "options": {
           "timeout": 330000
-        }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
       },
       "name": "Load Generation",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -580,
+        -140,
         80
       ],
       "id": "devdoc-0005",
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 15000
+      "waitBetweenTries": 15000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "devdoc-mcp-orchestration-header-auth",
+          "name": "DevDoc MCP Orchestration API"
+        }
+      }
     },
     {
       "parameters": {
@@ -137,26 +176,15 @@
     {
       "parameters": {
         "method": "PUT",
-        "url": "={{ $env.DEVDOC_MCP_URL + '/api/orchestration/generations/' + $('Load Generation').item.json.data.id }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "={{ 'Bearer ' + $env.DEVDOC_MCP_TOKEN }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
+        "url": "={{ 'https://jxhg08kzgzoooyy1igvuzlxs.152.53.114.87.sslip.io/api/orchestration/generations/' + $('Load Generation').item.json.data.id }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ status: 'generating' }) }}",
+        "jsonBody": "={{ JSON.stringify({ status: 'generating', payload: { ...$('Load Generation').item.json.data.payload, menuId: $('Expand Courses').item.json.menuId } }) }}",
         "options": {
           "timeout": 330000
-        }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
       },
       "name": "Mark Generating",
       "type": "n8n-nodes-base.httpRequest",
@@ -168,31 +196,26 @@
       "id": "devdoc-0007",
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 15000
+      "waitBetweenTries": 15000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "devdoc-mcp-orchestration-header-auth",
+          "name": "DevDoc MCP Orchestration API"
+        }
+      }
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.DEVDOC_MCP_URL + '/api/orchestration/candidats' }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "={{ 'Bearer ' + $env.DEVDOC_MCP_TOKEN }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
+        "url": "https://jxhg08kzgzoooyy1igvuzlxs.152.53.114.87.sslip.io/api/orchestration/candidats",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ title: $('Load Generation').item.json.data.payload.title, description: $('Load Generation').item.json.data.payload.brief || $('Load Generation').item.json.data.payload.description || '', technology: $('Load Generation').item.json.data.payload.technology, level: $('Load Generation').item.json.data.payload.level, duration: $('Load Generation').item.json.data.payload.duration }) }}",
         "options": {
           "timeout": 330000
-        }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
       },
       "name": "Generate Candidate",
       "type": "n8n-nodes-base.httpRequest",
@@ -204,31 +227,26 @@
       "id": "devdoc-0008",
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 15000
+      "waitBetweenTries": 15000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "devdoc-mcp-orchestration-header-auth",
+          "name": "DevDoc MCP Orchestration API"
+        }
+      }
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.DEVDOC_MCP_URL + '/api/orchestration/verifier' }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "={{ 'Bearer ' + $env.DEVDOC_MCP_TOKEN }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
+        "url": "https://jxhg08kzgzoooyy1igvuzlxs.152.53.114.87.sslip.io/api/orchestration/verifier",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ candidate: $('Generate Candidate').item.json.data, images: [] }) }}",
         "options": {
           "timeout": 330000
-        }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
       },
       "name": "Verify Candidate",
       "type": "n8n-nodes-base.httpRequest",
@@ -240,31 +258,26 @@
       "id": "devdoc-0009",
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 15000
+      "waitBetweenTries": 15000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "devdoc-mcp-orchestration-header-auth",
+          "name": "DevDoc MCP Orchestration API"
+        }
+      }
     },
     {
       "parameters": {
         "method": "PUT",
-        "url": "={{ $env.DEVDOC_MCP_URL + '/api/orchestration/generations/' + $('Load Generation').item.json.data.id }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "={{ 'Bearer ' + $env.DEVDOC_MCP_TOKEN }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
+        "url": "={{ 'https://jxhg08kzgzoooyy1igvuzlxs.152.53.114.87.sslip.io/api/orchestration/generations/' + $('Load Generation').item.json.data.id }}",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ status: $json.data.approved ? 'ready' : 'verifying', candidate: $('Generate Candidate').item.json.data, verificationReport: $json.data }) }}",
         "options": {
           "timeout": 330000
-        }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
       },
       "name": "Store Verification",
       "type": "n8n-nodes-base.httpRequest",
@@ -276,7 +289,13 @@
       "id": "devdoc-0010",
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 15000
+      "waitBetweenTries": 15000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "devdoc-mcp-orchestration-header-auth",
+          "name": "DevDoc MCP Orchestration API"
+        }
+      }
     },
     {
       "parameters": {
@@ -345,26 +364,15 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.DEVDOC_MCP_URL + '/api/orchestration/corriger' }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "={{ 'Bearer ' + $env.DEVDOC_MCP_TOKEN }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
+        "url": "https://jxhg08kzgzoooyy1igvuzlxs.152.53.114.87.sslip.io/api/orchestration/corriger",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ candidate: $json.data.candidate, report: $json.data.verificationReport, technology: $('Load Generation').item.json.data.payload.technology, level: $('Load Generation').item.json.data.payload.level }) }}",
         "options": {
           "timeout": 330000
-        }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
       },
       "name": "Correct Candidate",
       "type": "n8n-nodes-base.httpRequest",
@@ -376,31 +384,26 @@
       "id": "devdoc-0013",
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 15000
+      "waitBetweenTries": 15000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "devdoc-mcp-orchestration-header-auth",
+          "name": "DevDoc MCP Orchestration API"
+        }
+      }
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.DEVDOC_MCP_URL + '/api/orchestration/verifier' }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "={{ 'Bearer ' + $env.DEVDOC_MCP_TOKEN }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
+        "url": "https://jxhg08kzgzoooyy1igvuzlxs.152.53.114.87.sslip.io/api/orchestration/verifier",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ candidate: $('Correct Candidate').item.json.data, images: [] }) }}",
         "options": {
           "timeout": 330000
-        }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
       },
       "name": "Verify Corrected Candidate",
       "type": "n8n-nodes-base.httpRequest",
@@ -412,31 +415,26 @@
       "id": "devdoc-0014",
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 15000
+      "waitBetweenTries": 15000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "devdoc-mcp-orchestration-header-auth",
+          "name": "DevDoc MCP Orchestration API"
+        }
+      }
     },
     {
       "parameters": {
         "method": "PUT",
-        "url": "={{ $env.DEVDOC_MCP_URL + '/api/orchestration/generations/' + $('Load Generation').item.json.data.id }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "={{ 'Bearer ' + $env.DEVDOC_MCP_TOKEN }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
+        "url": "={{ 'https://jxhg08kzgzoooyy1igvuzlxs.152.53.114.87.sslip.io/api/orchestration/generations/' + $('Load Generation').item.json.data.id }}",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ status: $json.data.approved ? 'ready' : 'verifying', candidate: $('Correct Candidate').item.json.data, verificationReport: $json.data }) }}",
         "options": {
           "timeout": 330000
-        }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
       },
       "name": "Store Corrected Verification",
       "type": "n8n-nodes-base.httpRequest",
@@ -448,31 +446,26 @@
       "id": "devdoc-0015",
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 15000
+      "waitBetweenTries": 15000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "devdoc-mcp-orchestration-header-auth",
+          "name": "DevDoc MCP Orchestration API"
+        }
+      }
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.DEVDOC_MCP_URL + '/api/orchestration/generations/' + $('Load Generation').item.json.data.id + '/echouer' }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "={{ 'Bearer ' + $env.DEVDOC_MCP_TOKEN }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
+        "url": "={{ 'https://jxhg08kzgzoooyy1igvuzlxs.152.53.114.87.sslip.io/api/orchestration/generations/' + $('Load Generation').item.json.data.id + '/echouer' }}",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ technicalError: 'Verification rejected after the configured maximum of three attempts', verificationReport: $json.data.verificationReport }) }}",
         "options": {
           "timeout": 330000
-        }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
       },
       "name": "Record Failed Course",
       "type": "n8n-nodes-base.httpRequest",
@@ -484,7 +477,13 @@
       "id": "devdoc-0016",
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 15000
+      "waitBetweenTries": 15000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "devdoc-mcp-orchestration-header-auth",
+          "name": "DevDoc MCP Orchestration API"
+        }
+      }
     },
     {
       "parameters": {
@@ -494,7 +493,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -580,
+        -140,
         -140
       ],
       "id": "devdoc-0017"
@@ -505,7 +504,7 @@
       "main": [
         [
           {
-            "node": "Validate Generation Batch",
+            "node": "Validate Formation Batch",
             "type": "main",
             "index": 0
           }
@@ -516,18 +515,7 @@
       "main": [
         [
           {
-            "node": "Validate Generation Batch",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Validate Generation Batch": {
-      "main": [
-        [
-          {
-            "node": "Loop Over Courses",
+            "node": "Validate Formation Batch",
             "type": "main",
             "index": 0
           }
@@ -695,6 +683,39 @@
       ]
     },
     "Record Failed Course": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Courses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Formation Batch": {
+      "main": [
+        [
+          {
+            "node": "Prepare Formation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Formation": {
+      "main": [
+        [
+          {
+            "node": "Expand Courses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand Courses": {
       "main": [
         [
           {

@@ -8,11 +8,19 @@ export class N8NCourseBatchClient {
     this.timeoutMs = Number(config.timeoutMs) || 10000;
   }
 
-  async enqueue(generationIds) {
-    const ids = [...new Set((generationIds || []).map(Number))].filter(
-      (id) => Number.isInteger(id) && id > 0
-    );
-    if (!ids.length) return { accepted: 0 };
+  async enqueue(batch) {
+    const generationIds = [
+      ...new Set(
+        (batch?.menus || [])
+          .flatMap((menu) => menu.generationIds || [])
+          .map(Number)
+      )
+    ].filter((id) => Number.isInteger(id) && id > 0);
+
+    if (!generationIds.length) return { accepted: 0 };
+    if (!batch?.superMenu || !batch?.category || !Array.isArray(batch?.menus)) {
+      throw new Error("Le lot n8n doit contenir superMenu, category et menus");
+    }
     if (!this.url || !this.token || !this.headerName) {
       throw new Error("Orchestration n8n des cours non configurée");
     }
@@ -23,7 +31,7 @@ export class N8NCourseBatchClient {
         "Content-Type": "application/json",
         [this.headerName]: this.token
       },
-      body: JSON.stringify({ generationIds: ids }),
+      body: JSON.stringify(batch),
       signal: AbortSignal.timeout(this.timeoutMs)
     });
 
@@ -34,6 +42,6 @@ export class N8NCourseBatchClient {
       );
     }
 
-    return { accepted: ids.length };
+    return { accepted: generationIds.length };
   }
 }
