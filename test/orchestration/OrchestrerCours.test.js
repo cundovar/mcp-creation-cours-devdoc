@@ -92,6 +92,11 @@ describe("OrchestrerCours", () => {
     ]));
   });
 
+  it("autorise la balise sémantique cite sans attribut dangereux", () => {
+    const codeHTML = '<main class="principal"><blockquote>Principe<cite>Source officielle</cite></blockquote></main>';
+    expect(new DeterministicCourseValidator().validate({ codeHTML })).toEqual([]);
+  });
+
   it("autorise les tableaux et schémas HTML sans image", () => {
     const codeHTML = '<main class="principal"><h1>Python</h1><table><caption>Flux</caption><tbody><tr><th>Entrée</th><td>Traitement → résultat</td></tr></tbody></table></main>';
     expect(new DeterministicCourseValidator().validate({ codeHTML, illustrations: [] })).toEqual([]);

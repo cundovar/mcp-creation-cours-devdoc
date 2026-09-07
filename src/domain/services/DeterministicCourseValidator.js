@@ -3,7 +3,7 @@ import { parseFragment } from "parse5";
 const ALLOWED_TAGS = new Set([
   "main", "section", "article", "header", "footer", "div", "span",
   "h1", "h2", "h3", "h4", "h5", "h6", "p", "br", "hr",
-  "ul", "ol", "li", "dl", "dt", "dd", "blockquote", "pre", "code",
+  "ul", "ol", "li", "dl", "dt", "dd", "blockquote", "cite", "pre", "code",
   "strong", "em", "b", "i", "u", "mark", "small", "kbd", "samp",
   "table", "caption", "thead", "tbody", "tfoot", "tr", "th", "td",
   "figure", "figcaption", "a", "details", "summary"
