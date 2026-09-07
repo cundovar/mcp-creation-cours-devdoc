@@ -481,8 +481,8 @@ export class DevDocRemoteMCPServer {
       this.listerCours.niveaux(),
       this.listerCours.menus()
     ]);
-    const validMenus = menus.filter((menu) => menu.categoryId && menu.niveauCoursId);
-    return { technologies, niveaux, menus: validMenus, ignoredInvalidMenus: menus.length - validMenus.length };
+    const validMenus = menus.filter((menu) => menu.categoryId);
+    return { technologies, niveaux, menus: validMenus, ignoredMenusSansCategorie: menus.length - validMenus.length };
   }
 
   summarizeGeneration(generation, options = {}) {
