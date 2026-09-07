@@ -42,7 +42,12 @@ conserver les clients et jetons OAuth après un redéploiement.
 
 ## API HTTP d’orchestration
 
-Les routes `/api/*` restent disponibles pour n8n et exigent :
+Le MCP distant enregistre les demandes puis transmet leur `generationId` au
+workflow n8n `50-devdoc-course-batch`. n8n est l’unique orchestrateur de la
+génération, de la vérification et des corrections. Le MCP ne publie jamais un
+cours sans confirmation explicite.
+
+Les routes `/api/*` utilisées par n8n exigent :
 
 ```http
 Authorization: Bearer <ORCHESTRATION_API_TOKEN>

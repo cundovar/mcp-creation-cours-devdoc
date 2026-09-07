@@ -12,7 +12,7 @@ import { OrchestrerCours } from "../../domain/use-cases/OrchestrerCours.js";
 import { OpenAIImageService } from "../ia/OpenAIImageService.js";
 import { OpenAIVerificationService } from "../ia/OpenAIVerificationService.js";
 import { DeterministicCourseValidator } from "../../domain/services/DeterministicCourseValidator.js";
-import { CourseGenerationProcessor } from "../../domain/services/CourseGenerationProcessor.js";
+import { N8NCourseBatchClient } from "../orchestration/N8NCourseBatchClient.js";
 
 const require = createRequire(import.meta.url);
 
@@ -119,14 +119,14 @@ export class Container {
     return this.instances.courseOrchestration;
   }
 
-  getCourseGenerationProcessor() {
-    if (!this.instances.courseGenerationProcessor) {
-      this.instances.courseGenerationProcessor = new CourseGenerationProcessor(
-        this.getCoursRepository(),
-        this.getCourseOrchestrationService()
+
+  getN8NCourseBatchClient() {
+    if (!this.instances.n8nCourseBatchClient) {
+      this.instances.n8nCourseBatchClient = new N8NCourseBatchClient(
+        this.config.n8nCourseBatch
       );
     }
-    return this.instances.courseGenerationProcessor;
+    return this.instances.n8nCourseBatchClient;
   }
 
   async dispose() {

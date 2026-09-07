@@ -9,7 +9,7 @@ export class DevDocRemoteMCPServer {
     this.repository = container.getCoursRepository();
     this.orchestration = container.getCourseOrchestrationService();
     this.listerCours = container.getListerCoursUseCase();
-    this.processor = container.getCourseGenerationProcessor();
+    this.n8nCourseBatch = container.getN8NCourseBatchClient();
   }
 
   createServer() {
@@ -28,6 +28,8 @@ export class DevDocRemoteMCPServer {
         switch (name) {
           case "creer_brouillon_cours":
             return this.result(await this.createDraft(args));
+          case "creer_lot_brouillons_cours":
+            return this.result(await this.createDraftBatch(args));
           case "voir_brouillon_cours":
             return this.result(await this.getDraft(args));
           case "preparer_emplacement_devdoc":
@@ -103,6 +105,51 @@ export class DevDocRemoteMCPServer {
             }
           },
           required: ["requestId", "titre", "technologie", "niveau", "duree"]
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: true
+        }
+      },
+      {
+        name: "creer_lot_brouillons_cours",
+        title: "Créer et vérifier un lot de brouillons DevDoc via n8n",
+        description:
+          "Utilisez cet outil pour créer plusieurs cours. Le lot est transmis en une seule fois à n8n, qui traite les générations séquentiellement, les vérifie et conserve des brouillons non publiés.",
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            batchId: {
+              type: "string",
+              minLength: 8,
+              maxLength: 100,
+              pattern: "^[A-Za-z0-9._:-]+$"
+            },
+            cours: {
+              type: "array",
+              minItems: 1,
+              maxItems: 20,
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  requestId: { type: "string", minLength: 8, maxLength: 100, pattern: "^[A-Za-z0-9._:-]+$" },
+                  titre: { type: "string", minLength: 3, maxLength: 180 },
+                  description: { type: "string", maxLength: 2000 },
+                  technologie: { type: "string", minLength: 1, maxLength: 100 },
+                  niveau: { type: "string", minLength: 1, maxLength: 100 },
+                  duree: { type: "string", minLength: 1, maxLength: 100 },
+                  menuId: { type: "integer", minimum: 1 },
+                  nouveauMenuLabel: { type: "string", minLength: 1, maxLength: 150 }
+                },
+                required: ["requestId", "titre", "technologie", "niveau", "duree"]
+              }
+            }
+          },
+          required: ["batchId", "cours"]
         },
         annotations: {
           readOnlyHint: false,
@@ -271,7 +318,13 @@ export class DevDocRemoteMCPServer {
   }
 
   async resumePendingGenerations() {
-    return this.processor.resume();
+    const generations = await this.repository.listerGenerations({
+      statuses: ["pending"],
+      limit: 100
+    });
+    if (!generations.length) return 0;
+    await this.queueWithN8N(generations);
+    return generations.length;
   }
 
   async preparePlacement({ superMenu, category, menus = [], confirmation = false }) {
@@ -382,21 +435,110 @@ export class DevDocRemoteMCPServer {
       });
     }
 
-    const queued = this.processor.enqueue(generation);
+    if (["queued", "generating", "verifying"].includes(generation.status)) {
+      return this.summarizeGeneration(generation, {
+        reused: true,
+        processing: true,
+        pollAfterSeconds: 15,
+        message: "Cette génération est déjà orchestrée par n8n. Consultez voir_brouillon_cours avec le même generationId."
+      });
+    }
+
+    await this.queueWithN8N([generation]);
     return this.summarizeGeneration(generation, {
-      reused: !queued,
+      reused: false,
       processing: true,
       pollAfterSeconds: 15,
-      message: queued
-        ? "La génération a démarré en arrière-plan. Conservez generationId et consultez voir_brouillon_cours ; ne recréez pas le contenu dans la conversation."
-        : "Cette génération est déjà en cours. Consultez voir_brouillon_cours avec le même generationId ; ne lancez pas un autre brouillon."
+      message: "La génération a été transmise à n8n. Conservez generationId et consultez voir_brouillon_cours ; ne recréez pas le contenu dans la conversation."
     });
+  }
+
+  async createDraftBatch({ batchId, cours }) {
+    if (!/^[A-Za-z0-9._:-]{8,100}$/.test(String(batchId || ""))) {
+      throw new Error("batchId invalide");
+    }
+    if (!Array.isArray(cours) || cours.length < 1 || cours.length > 20) {
+      throw new Error("Le lot doit contenir entre 1 et 20 cours");
+    }
+
+    const generations = [];
+    for (const args of cours) {
+      this.validateDraftArgs(args);
+      const technology = await this.repository.trouverTechnologieParNom(
+        args.technologie
+      );
+      if (!technology) {
+        throw new Error(`Technologie DevDoc inconnue: ${args.technologie}`);
+      }
+      const payload = {
+        title: args.titre.trim(),
+        brief: String(args.description || "").trim(),
+        technology: args.technologie.trim(),
+        level: args.niveau.trim(),
+        duration: args.duree.trim(),
+        ...(args.menuId ? { menuId: Number(args.menuId) } : {}),
+        ...(args.nouveauMenuLabel
+          ? { newMenuLabel: args.nouveauMenuLabel.trim() }
+          : {})
+      };
+      generations.push(
+        await this.repository.creerGeneration({
+          batchId,
+          externalId: args.requestId,
+          payload
+        })
+      );
+    }
+
+    const dispatchable = generations.filter((generation) =>
+      ["pending", "failed"].includes(generation.status)
+    );
+    if (dispatchable.length) await this.queueWithN8N(dispatchable);
+
+    return {
+      batchId,
+      processing: dispatchable.length > 0,
+      count: generations.length,
+      generations: generations.map((generation) =>
+        this.summarizeGeneration(generation, {
+          processing: [
+            "pending",
+            "failed",
+            "queued",
+            "generating",
+            "verifying"
+          ].includes(generation.status)
+        })
+      ),
+      message: dispatchable.length
+        ? `${dispatchable.length} génération(s) transmise(s) à n8n dans un seul lot.`
+        : "Toutes les générations de ce lot étaient déjà en cours ou terminées."
+    };
+  }
+
+  async queueWithN8N(generations) {
+    const ids = generations.map((generation) => Number(generation.id));
+    await Promise.all(
+      ids.map((id) =>
+        this.repository.mettreAJourGeneration(id, { status: "queued" })
+      )
+    );
+    try {
+      await this.n8nCourseBatch.enqueue(ids);
+    } catch (error) {
+      await Promise.allSettled(
+        ids.map((id) =>
+          this.repository.mettreAJourGeneration(id, { status: "pending" })
+        )
+      );
+      throw error;
+    }
   }
 
   async getDraft({ generationId, inclureHtml = false }) {
     const id = this.requirePositiveInteger(generationId, "generationId");
     const generation = await this.repository.voirGeneration(id);
-    const processing = ["pending", "generating", "verifying"].includes(generation.status);
+    const processing = ["pending", "queued", "generating", "verifying"].includes(generation.status);
     return this.summarizeGeneration(generation, {
       includeHtml: inclureHtml === true,
       processing,

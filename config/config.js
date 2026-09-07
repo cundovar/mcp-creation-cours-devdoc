@@ -49,6 +49,21 @@ export const config = {
     corsOrigin: process.env.HTTP_CORS_ORIGIN || "*",
     orchestrationToken: process.env.ORCHESTRATION_API_TOKEN || ""
   },
+  n8nCourseBatch: {
+    url:
+      process.env.N8N_COURSE_BATCH_URL ||
+      "http://n8n:5678/webhook/devdoc-course-batch",
+    token:
+      process.env.N8N_COURSE_BATCH_TOKEN ||
+      process.env.ORCHESTRATION_API_TOKEN ||
+      "",
+    headerName:
+      process.env.N8N_COURSE_BATCH_HEADER || "X-DevDoc-Workflow-Token",
+    timeoutMs: Number.parseInt(
+      process.env.N8N_COURSE_BATCH_TIMEOUT_MS || "10000",
+      10
+    )
+  },
   log: {
     level: process.env.LOG_LEVEL || "info"
   }
@@ -78,6 +93,8 @@ export function validateConfig() {
       N8N_API_KEY: config.symfonyApi.apiKey
     });
   }
+
+  required.N8N_COURSE_BATCH_TOKEN = config.n8nCourseBatch.token;
 
   const missing = Object.entries(required)
     .filter(([, value]) => !value)

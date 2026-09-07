@@ -58,28 +58,27 @@ function createSubject(overrides = {}) {
     coursIA: vi.fn(async () => []),
     ...overrides.listerCours
   };
-  const processor = {
-    enqueue: vi.fn(() => true),
-    resume: vi.fn(async () => 0),
-    ...overrides.processor
+  const n8nCourseBatch = {
+    enqueue: vi.fn(async (generationIds) => ({ accepted: generationIds.length })),
+    ...overrides.n8nCourseBatch
   };
   const container = {
     getCoursRepository: () => repository,
     getCourseOrchestrationService: () => orchestration,
     getListerCoursUseCase: () => listerCours,
-    getCourseGenerationProcessor: () => processor
+    getN8NCourseBatchClient: () => n8nCourseBatch
   };
   return {
     subject: new DevDocRemoteMCPServer(container),
     repository,
     orchestration,
-    processor
+    n8nCourseBatch
   };
 }
 
 describe("DevDocRemoteMCPServer", () => {
   it("crée et met en file un brouillon sans bloquer la requête", async () => {
-    const { subject, repository, orchestration, processor } = createSubject();
+    const { subject, repository, orchestration, n8nCourseBatch } = createSubject();
 
     const result = await subject.createDraft({
       requestId: "chat-python-001",
@@ -95,7 +94,8 @@ describe("DevDocRemoteMCPServer", () => {
         externalId: "chat-python-001"
       })
     );
-    expect(processor.enqueue).toHaveBeenCalledWith(expect.objectContaining({ id: 17 }));
+    expect(repository.mettreAJourGeneration).toHaveBeenCalledWith(17, { status: "queued" });
+    expect(n8nCourseBatch.enqueue).toHaveBeenCalledWith([17]);
     expect(orchestration.genererCandidat).not.toHaveBeenCalled();
     expect(orchestration.verifierCandidat).not.toHaveBeenCalled();
     expect(repository.finaliserGeneration).not.toHaveBeenCalled();
@@ -111,7 +111,7 @@ describe("DevDocRemoteMCPServer", () => {
       verificationReport: { approved: true },
       courseId: null
     };
-    const { subject, orchestration, processor } = createSubject({
+    const { subject, orchestration, n8nCourseBatch } = createSubject({
       repository: { creerGeneration: vi.fn(async () => existing) }
     });
 
@@ -124,7 +124,7 @@ describe("DevDocRemoteMCPServer", () => {
     });
 
     expect(orchestration.genererCandidat).not.toHaveBeenCalled();
-    expect(processor.enqueue).not.toHaveBeenCalled();
+    expect(n8nCourseBatch.enqueue).not.toHaveBeenCalled();
     expect(result.reused).toBe(true);
     expect(result.generationId).toBe(8);
   });
@@ -141,7 +141,7 @@ describe("DevDocRemoteMCPServer", () => {
       verificationReport: { approved: false },
       courseId: null
     };
-    const { subject, orchestration, processor } = createSubject({
+    const { subject, orchestration, n8nCourseBatch } = createSubject({
       repository: { creerGeneration: vi.fn(async () => failed) }
     });
 
@@ -154,8 +154,37 @@ describe("DevDocRemoteMCPServer", () => {
     });
 
     expect(orchestration.genererCandidat).not.toHaveBeenCalled();
-    expect(processor.enqueue).toHaveBeenCalledWith(failed);
+    expect(n8nCourseBatch.enqueue).toHaveBeenCalledWith([8]);
     expect(result.processing).toBe(true);
+  });
+
+  it("transmet plusieurs cours à n8n dans un seul lot", async () => {
+    const { subject, repository, n8nCourseBatch } = createSubject({
+      repository: {
+        creerGeneration: vi.fn(async ({ externalId }) => ({
+          id: externalId.endsWith("1") ? 17 : 18,
+          status: "pending",
+          verificationAttempts: 0,
+          candidate: null,
+          verificationReport: null,
+          courseId: null
+        }))
+      }
+    });
+
+    const result = await subject.createDraftBatch({
+      batchId: "batch-python-001",
+      cours: [
+        { requestId: "course-python-1", titre: "Python 1", technologie: "Python", niveau: "junior", duree: "1h" },
+        { requestId: "course-python-2", titre: "Python 2", technologie: "Python", niveau: "junior", duree: "1h" }
+      ]
+    });
+
+    expect(n8nCourseBatch.enqueue).toHaveBeenCalledOnce();
+    expect(n8nCourseBatch.enqueue).toHaveBeenCalledWith([17, 18]);
+    expect(repository.mettreAJourGeneration).toHaveBeenCalledWith(17, { status: "queued" });
+    expect(repository.mettreAJourGeneration).toHaveBeenCalledWith(18, { status: "queued" });
+    expect(result.count).toBe(2);
   });
 
   it("refuse la publication sans confirmation explicite", async () => {
