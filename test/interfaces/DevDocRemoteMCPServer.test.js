@@ -211,7 +211,7 @@ describe("DevDocRemoteMCPServer", () => {
     });
   });
 
-  it("masque du catalogue les menus sans catégorie ou sans niveau", async () => {
+  it("masque du catalogue les menus sans catégorie mais conserve ceux sans niveau", async () => {
     const { subject } = createSubject({
       listerCours: {
         menus: vi.fn(async () => [
@@ -224,8 +224,33 @@ describe("DevDocRemoteMCPServer", () => {
 
     const result = await subject.listCatalog();
 
-    expect(result.menus).toEqual([{ id: 1, categoryId: 28, niveauCoursId: 3 }]);
-    expect(result.ignoredInvalidMenus).toBe(2);
+    expect(result.menus).toEqual([
+      { id: 1, categoryId: 28, niveauCoursId: 3 },
+      { id: 3, categoryId: 28, niveauCoursId: null }
+    ]);
+    expect(result.ignoredMenusSansCategorie).toBe(1);
+  });
+
+  it("réaffecte un brouillon vers un menu sans niveau", async () => {
+    const { subject, repository } = createSubject({
+      repository: {
+        voirGeneration: vi.fn(async () => ({
+          id: 17,
+          status: "ready",
+          payload: { technology: "typescript", level: "newbie", newMenuLabel: "Ancien" },
+          verificationReport: { approved: true },
+          courseId: null
+        })),
+        trouverMenuParId: vi.fn(async () => ({ id: 92, categoryId: 28, niveauCoursId: null }))
+      }
+    });
+
+    await subject.reassignDraft({ generationId: 17, menuId: 92 });
+
+    expect(repository.mettreAJourGeneration).toHaveBeenCalledWith(17, {
+      status: "ready",
+      payload: { technology: "typescript", level: "newbie", menuId: 92 }
+    });
   });
 
   it("propose une nouvelle arborescence pour une technologie inconnue sans la créer", async () => {
