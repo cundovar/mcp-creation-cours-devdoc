@@ -56,6 +56,22 @@ describe("workflow n8n DevDoc", () => {
     }
   });
 
+  it("autorise les corrections tant que trois vérifications n’ont pas été enregistrées", () => {
+    const retry = workflow.nodes.find(
+      (node) => node.name === "Can Retry Verification"
+    );
+    const condition = retry.parameters.conditions.conditions[0];
+
+    expect(condition.leftValue).toContain("verificationAttempts) < 3");
+    expect(condition.operator).toEqual({
+      type: "boolean",
+      operation: "true"
+    });
+    expect(workflow.connections["Can Retry Verification"].main[0]).toEqual([
+      { node: "Correct Candidate", type: "main", index: 0 }
+    ]);
+  });
+
   it("prévoit des délais et reprises adaptés au bridge", () => {
     const longRunningNodes = workflow.nodes.filter(
       (node) => node.type === "n8n-nodes-base.httpRequest"

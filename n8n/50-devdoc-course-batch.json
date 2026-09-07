@@ -340,11 +340,11 @@
           },
           "conditions": [
             {
-              "leftValue": "={{ Number($json.data.verificationAttempts) }}",
-              "rightValue": 3,
+              "leftValue": "={{ Number($json.data.verificationAttempts) < 3 }}",
+              "rightValue": true,
               "operator": {
-                "type": "number",
-                "operation": "smaller"
+                "type": "boolean",
+                "operation": "true"
               }
             }
           ],
