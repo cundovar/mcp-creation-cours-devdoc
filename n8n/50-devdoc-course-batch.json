@@ -233,7 +233,8 @@
           "id": "devdoc-mcp-orchestration-header-auth",
           "name": "DevDoc MCP Orchestration API"
         }
-      }
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -264,7 +265,8 @@
           "id": "devdoc-mcp-orchestration-header-auth",
           "name": "DevDoc MCP Orchestration API"
         }
-      }
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -390,7 +392,8 @@
           "id": "devdoc-mcp-orchestration-header-auth",
           "name": "DevDoc MCP Orchestration API"
         }
-      }
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -421,7 +424,8 @@
           "id": "devdoc-mcp-orchestration-header-auth",
           "name": "DevDoc MCP Orchestration API"
         }
-      }
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -497,6 +501,37 @@
         -140
       ],
       "id": "devdoc-0017"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://jxhg08kzgzoooyy1igvuzlxs.152.53.114.87.sslip.io/api/orchestration/generations/' + $('Load Generation').item.json.data.id + '/echouer' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ technicalError: String($json.error?.message || $json.message || 'Erreur technique n8n/bridge'), verificationReport: $('Load Generation').item.json.data.verificationReport || null }) }}",
+        "options": {
+          "timeout": 330000
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "name": "Record Technical Failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        360
+      ],
+      "id": "devdoc-technical-failure",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 15000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "devdoc-mcp-orchestration-header-auth",
+          "name": "DevDoc MCP Orchestration API"
+        }
+      }
     }
   ],
   "connections": {
@@ -588,6 +623,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "Record Technical Failure",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -596,6 +638,13 @@
         [
           {
             "node": "Store Verification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record Technical Failure",
             "type": "main",
             "index": 0
           }
@@ -657,6 +706,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "Record Technical Failure",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -665,6 +721,13 @@
         [
           {
             "node": "Store Corrected Verification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record Technical Failure",
             "type": "main",
             "index": 0
           }
@@ -716,6 +779,17 @@
       ]
     },
     "Expand Courses": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Courses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Technical Failure": {
       "main": [
         [
           {
